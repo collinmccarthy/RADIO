@@ -1,7 +1,7 @@
 import sys
 import copy
 from pathlib import Path
-from typing import Callable, Union
+from typing import Callable, Union, Type
 
 import torch
 from torch import nn
@@ -26,9 +26,15 @@ def diff_model(
     orig_model: Union[RADIOModel, nn.Module],
     resolution: Resolution,
     skip_forward_pass: bool = False,
+    expected_type_diffs: dict[str, Type[Callable]] = {},
 ) -> dict:
     diff_results = {}  # Pass in dict to add to, so the results are "flattened"
-    _diff_module(curr_module=curr_model, orig_module=orig_model, diff_results=diff_results)
+    _diff_module(
+        curr_module=curr_model,
+        orig_module=orig_model,
+        diff_results=diff_results,
+        expected_type_diffs=expected_type_diffs,
+    )
 
     # Perform forward pass and diff result if everything else lines up
     if not skip_forward_pass:
@@ -195,7 +201,11 @@ def _diff_module_hooks(curr_hooks: dict[int, Callable], orig_hooks: dict[int, Ca
 
 
 def _diff_module(
-    curr_module: nn.Module, orig_module: nn.Module, diff_results: dict, prefix: str = ""
+    curr_module: nn.Module,
+    orig_module: nn.Module,
+    diff_results: dict,
+    prefix: str = "",
+    expected_type_diffs: dict[str, Type[Callable]] = {},
 ):
     # Rather than recursively adding, append to current dict so the results are shallower
     current_results = {}
@@ -293,11 +303,15 @@ def _diff_module(
         orig_module, nn.Module
     ), "Expected both curr_module and orig_module to be nn.Module's"
 
-    if type(curr_module) != type(orig_module):
+    expected_type_diff = (
+        prefix in expected_type_diffs and type(curr_module) == expected_type_diffs[prefix]
+    )
+    if type(curr_module) != type(orig_module) and not expected_type_diff:
+        # Check expected type diffs
         children_diffs.update(
             module_types=dict(
-                orig_module_type=type(orig_module),
-                curr_module_type=type(curr_module),
+                orig_module_type=type(orig_module).__name__,
+                curr_module_type=type(curr_module).__name__,
             )
         )
 

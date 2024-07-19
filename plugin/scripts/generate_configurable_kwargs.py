@@ -5,11 +5,11 @@ Example runs:
 conda activate radio
 cd radio/scripts
 
-# Create output/log_versions.txt without full args
-python log_versions.py
+# Create output/generate_configurable_kwargs.txt without full args
+python generate_configurable_kwargs.py
 
-# Create output/log_versions_with_args.txt with full args
-python log_versions.py --full-args --log-filename=log_versions_full_args.txt
+# Create output/generate_version_kwargs_with_args.txt with full args
+python generate_configurable_kwargs.py --full-args --log-filename=generate_version_kwargs_with_args.txt
 ```
 """
 
@@ -24,14 +24,17 @@ from typing import Optional
 import torch
 from torch.hub import load_state_dict_from_url
 
-# Hack for path
-sys.path.insert(0, str(Path(__file__).parent.parent))  # Top-level `radio` folder
+# Hack: add top-level module to path until setup.py exists or PYTHON_PATH has been updated
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))  # Top-level `RADIO` project dir
 
-from hubconf import radio_model, radio_model_from_kwargs, radio_model_load_state_dict
+from hubconf import radio_model
 from radio.common import RESOURCE_MAP
 from radio.radio_model import RADIOModel
 
-from common.diff_modules import diff_model
+from plugin.scripts.common.diff_modules import diff_model
+from plugin.radio.configurable_radio_model import (
+    ConfigurableRADIOModel,
+)
 
 logger = logging.getLogger(Path(__file__).name)
 
@@ -188,9 +191,7 @@ def main(adaptor_cfgs: Optional[dict] = None):
 
         # Generate the model independent from the checkpoint, and log these args for mmdet configs
         # Then diff with original model to verify the architecture hasn't changed
-        spectral_reparam = getattr(radio_args, "spectral_reparam", False)
-        disable_spectral_reparam: bool = True  # Default for radio_model_from_args()
-        create_radio_model_kwargs = dict(
+        model = ConfigurableRADIOModel(
             # Kwargs for RADIOModel
             patch_size=resource.patch_size,
             max_resolution=resource.max_resolution,
@@ -206,7 +207,7 @@ def main(adaptor_cfgs: Optional[dict] = None):
             drop=radio_args.drop,
             drop_path=radio_args.drop_path,
             drop_block=radio_args.drop_block,
-            global_pool=radio_args.gp,
+            gp=radio_args.gp,
             bn_momentum=radio_args.bn_momentum,
             bn_eps=radio_args.bn_eps,
             initial_checkpoint=radio_args.initial_checkpoint,
@@ -216,20 +217,12 @@ def main(adaptor_cfgs: Optional[dict] = None):
             model_kwargs=radio_args.model_kwargs,
             teachers=radio_args.teachers,
             register_multiple=radio_args.register_multiple,
-            spectral_reparam=spectral_reparam,  # Not in every ckpt
+            spectral_reparam=getattr(radio_args, "spectral_reparam", False),  # Not in every ckpt
             model_norm=getattr(radio_args, "model_norm", False),  # Not in every ckpt
             # Kwargs for conditioner
             dtype=getattr(radio_args, "dtype", torch.float32),  # Not in every ckpt
             # Other kwargs
-            disable_spectral_reparam=disable_spectral_reparam,
-        )
-
-        model, inner_kwargs = radio_model_from_kwargs(**create_radio_model_kwargs)
-
-        # Load state dict after, so the creation and loading are independent
-        model_has_spectral_reparam = spectral_reparam and not disable_spectral_reparam
-        radio_model_load_state_dict(
-            model=model, url=resource.url, model_has_spectral_reaparm=model_has_spectral_reparam
+            pretrained_url=resource.url,
         )
 
         diff_results = diff_model(
@@ -237,6 +230,7 @@ def main(adaptor_cfgs: Optional[dict] = None):
             orig_model=orig_model,
             resolution=resource.preferred_resolution,
             skip_forward_pass=cmdline_args.diff_skip_forward,
+            expected_type_diffs={"": ConfigurableRADIOModel},  # Top-level, empty prefix
         )
         if len(diff_results) > 0:
             msg = (
@@ -259,29 +253,26 @@ def main(adaptor_cfgs: Optional[dict] = None):
         logger.info("- " * 40)
         logger.info("\n" + pprint.pformat(resource_dict, sort_dicts=False))
 
-        conditioner_kwargs = inner_kwargs.get("conditioner_kwargs", {})
         logger.info("- " * 40)
         logger.info("Conditioner kwargs")
         logger.info("- " * 40)
-        logger.info("\n" + pprint.pformat(conditioner_kwargs, sort_dicts=False))
+        logger.info("\n" + pprint.pformat(model.conditioner_kwargs, sort_dicts=False))
 
-        create_model_kwargs = inner_kwargs.get("create_model_kwargs", {})
         logger.info("- " * 40)
         logger.info("Create model kwargs")
         logger.info("- " * 40)
-        logger.info("\n" + pprint.pformat(create_model_kwargs, sort_dicts=False))
+        logger.info("\n" + pprint.pformat(model.model_kwargs, sort_dicts=False))
 
-        radio_kwargs = inner_kwargs.get("radio_kwargs", {})
         logger.info("- " * 40)
         logger.info("Radio kwargs")
         logger.info("- " * 40)
-        logger.info("\n" + pprint.pformat(radio_kwargs, sort_dicts=False))
+        logger.info("\n" + pprint.pformat(model.radio_kwargs, sort_dicts=False))
 
         # The important one, the kwargs for our create_radio_model_from_kwargs() method
         logger.info("- " * 40)
-        logger.info("Create radio kwargs")
+        logger.info("Configurable radio kwargs")
         logger.info("- " * 40)
-        logger.info("\n" + pprint.pformat(create_radio_model_kwargs, sort_dicts=False))
+        logger.info("\n" + pprint.pformat(model.all_kwargs, sort_dicts=False))
 
         if cmdline_args.full_args:
             logger.info("- " * 40)

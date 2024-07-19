@@ -1,4 +1,3 @@
-# fmt: off
 # Copyright (c) 2023-2024, NVIDIA CORPORATION.  All rights reserved.
 #
 # NVIDIA CORPORATION and its licensors retain all intellectual property
@@ -6,11 +5,11 @@
 # and any modifications thereto.  Any use, reproduction, disclosure or
 # distribution of this software and related documentation without an express
 # license agreement from NVIDIA CORPORATION is strictly prohibited.
-from typing import Optional, Callable, Union, Tuple, Any, Dict, NamedTuple
+from typing import Optional, Callable, Union, Tuple, Dict, NamedTuple
+from enum import Enum
 
 import torch
 from torch import nn
-
 from timm.models import create_model, VisionTransformer
 
 from .enable_cpe_support import enable_cpe
@@ -20,7 +19,6 @@ from . import extra_timm_models
 from .adaptor_base import AdaptorBase, RadioOutput, AdaptorInput
 from . import eradio_model
 from .enable_spectral_reparam import configure_spectral_reparam_from_args, configure_spectral_reparam_from_kwargs
-
 
 class Resolution(NamedTuple):
     height: int
@@ -193,7 +191,7 @@ def create_model_from_args(args) -> nn.Module:
         **args.model_kwargs,
     )
 
-    if hasattr(model, 'norm') and not getattr(args, 'model_norm', False):
+    if hasattr(model, "norm") and not getattr(args, "model_norm", False):
         model.norm = nn.Identity()
 
     model.head = nn.Identity()
@@ -210,13 +208,18 @@ def create_model_from_args(args) -> nn.Module:
             register_multiple=args.register_multiple,
         )
 
-    if getattr(args, 'spectral_reparam', False):
+    if getattr(args, "spectral_reparam", False):
         configure_spectral_reparam_from_args(model, args)
 
     return model
 
 
-# fmt: on
+class KwargsType(str, Enum):
+    MODEL = "MODEL"
+    CONDITIONER = "CONDITIONER"
+    RADIO = "RADIO"
+
+
 def create_model_from_kwargs(
     model: str,  # args.model
     in_chans: Optional[int],  # args.in_chans
@@ -290,6 +293,3 @@ def create_model_from_kwargs(
         )
 
     return model
-
-
-# fmt: off
