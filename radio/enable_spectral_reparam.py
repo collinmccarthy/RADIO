@@ -1,3 +1,5 @@
+# fmt: off
+
 from logging import getLogger
 import math
 import os
@@ -154,6 +156,27 @@ def configure_spectral_reparam_from_args(model: nn.Module, args):
             eps=spectral_reparam.get('eps', 1e-12),
             init_norm_to_current=args.pretrained,
         )
+
+# fmt: on
+
+
+def configure_spectral_reparam_from_kwargs(
+    model: nn.Module,
+    pretrained: bool,
+    spectral_reparam: Union[bool, dict] = False,
+) -> None:
+    if isinstance(spectral_reparam, bool) and spectral_reparam:
+        enable_spectral_reparam(model, init_norm_to_current=pretrained)
+    elif isinstance(spectral_reparam, dict):
+        enable_spectral_reparam(
+            model,
+            n_power_iterations=spectral_reparam.get("n_power_iterations", 1),
+            eps=spectral_reparam.get("eps", 1e-12),
+            init_norm_to_current=pretrained,
+        )
+
+
+# fmt: off
 
 
 def disable_spectral_reparam(model: nn.Module):

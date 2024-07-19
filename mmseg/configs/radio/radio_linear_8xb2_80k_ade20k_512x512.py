@@ -7,17 +7,18 @@ _base_ = [
 ]
 
 # model settings
-crop_size = (518, 518)
-norm_cfg = dict(type='SyncBN', requires_grad=True)
+crop_size = (512, 512)
+norm_cfg = dict(type="SyncBN", requires_grad=True)
 data_preprocessor = dict(
-    type='SegDataPreProcessor',
+    type="SegDataPreProcessor",
     bgr_to_rgb=True,
     pad_val=0,
     seg_pad_val=255,
-    size=crop_size)
+    size=crop_size,
+)
 
 model = dict(
-    type='EncoderDecoder',
+    type="EncoderDecoder",
     data_preprocessor=data_preprocessor,
     backbone=dict(
         type="RADIO",
@@ -28,27 +29,28 @@ model = dict(
         token=None,
     ),
     decode_head=dict(
-        type='BNHead',
+        type="BNHead",
         in_channels=[1280],
         in_index=[0],
-        input_transform='resize_concat',
+        input_transform="resize_concat",
         channels=1280,
         dropout_ratio=0,
         num_classes=150,
-        norm_cfg=dict(type='SyncBN', requires_grad=True),
+        norm_cfg=dict(type="SyncBN", requires_grad=True),
         align_corners=False,
-        loss_decode=dict(
-            type='CrossEntropyLoss', use_sigmoid=False, loss_weight=1.0)),
+        loss_decode=dict(type="CrossEntropyLoss", use_sigmoid=False, loss_weight=1.0),
+    ),
     # model training and testing settings
     train_cfg=dict(),
-    test_cfg=dict(mode='whole'))  # yapf: disable
+    test_cfg=dict(mode="whole"),
+)  # yapf: disable
 
 # AdamW optimizer, no weight decay for position embedding & layer norm
 # in backbone
 optim_wrapper = dict(
     _delete_=True,
     type="OptimWrapper",
-    optimizer=dict(type="AdamW", lr=0.001, betas=(0.9, 0.999), weight_decay=0.),
+    optimizer=dict(type="AdamW", lr=0.001, betas=(0.9, 0.999), weight_decay=0.0),
     paramwise_cfg=dict(
         custom_keys={
             "pos_embed": dict(decay_mult=0.0),

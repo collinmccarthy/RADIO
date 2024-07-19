@@ -1,3 +1,4 @@
+# fmt: off
 # Copyright (c) 2023-2024, NVIDIA CORPORATION.  All rights reserved.
 #
 # NVIDIA CORPORATION and its licensors retain all intellectual property
@@ -6,11 +7,11 @@
 # distribution of this software and related documentation without an express
 # license agreement from NVIDIA CORPORATION is strictly prohibited.
 
-from typing import Union, Tuple
+from typing import Union, Tuple, Optional
 
 import torch
 from torch import nn
-
+from timm.data.constants import OPENAI_CLIP_MEAN, OPENAI_CLIP_STD
 
 norm_t = Union[Tuple[float, float, float], torch.Tensor]
 
@@ -45,5 +46,21 @@ def get_default_conditioner():
     )
 
 
+# fmt: on
+def get_default_conditioner_from_kwargs(
+    input_scale: float = 1.0,
+    norm_mean: tuple[float, float, float] = OPENAI_CLIP_MEAN,
+    norm_std: tuple[float, float, float] = OPENAI_CLIP_STD,
+    dtype: Optional[torch.dtype] = None,
+) -> InputConditioner:
+    return InputConditioner(
+        input_scale=input_scale,
+        norm_mean=norm_mean,
+        norm_std=norm_std,
+        dtype=dtype,
+    )
+
+
+# fmt: off
 def _to_tensor(v: norm_t):
     return torch.as_tensor(v, dtype=torch.float32).view(-1, 1, 1)
