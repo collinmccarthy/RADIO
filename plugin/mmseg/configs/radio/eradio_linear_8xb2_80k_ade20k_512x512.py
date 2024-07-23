@@ -113,5 +113,6 @@ visualizer = dict(
     type="SegLocalVisualizer", vis_backends=vis_backends, name="visualizer"
 )
 
-# Hook for auto-suspend/resume on ADLR clusters.
-custom_hooks = [dict(type="AutoResumeHook", interval=8000)]
+# Hook for auto-suspend/resume on ADLR clusters
+# UPDATE: Doesn't exist, and shouldn't be necessary if cfg.resume=True
+# custom_hooks = [dict(type="AutoResumeHook", interval=8000)]

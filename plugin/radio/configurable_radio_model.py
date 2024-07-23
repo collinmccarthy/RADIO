@@ -6,6 +6,7 @@ import inspect
 import sys
 
 import torch
+from torch import Tensor
 from torch.hub import load_state_dict_from_url
 from timm.models import clean_state_dict, VisionTransformer
 from timm.data.constants import OPENAI_CLIP_MEAN, OPENAI_CLIP_STD
@@ -22,6 +23,8 @@ from radio.adaptor_base import RadioOutput, AdaptorInput
 from radio.adaptor_registry import adaptor_registry
 from radio.vitdet import apply_vitdet_arch, VitDetArgs
 from hubconf import get_prefix_state_dict
+
+from plugin.radio.multires_eradio_model import MultiResERADIOModel
 
 
 class ConfigurableRADIOModel(RADIOModel):
@@ -50,29 +53,29 @@ class ConfigurableRADIOModel(RADIOModel):
         adaptor_cfgs: Optional[dict[str, Union[dict, Namespace]]],  # instead of adaptor_names
         vitdet_window_size: Optional[int],
         # Kwargs for create_model(), from checkpoint['args'] with same names unless specified
-        # TODO: Move these to a dict() so we can support other models like ConvNeXt with this API
-        model: str,
-        in_chans: Optional[int],
-        input_size: Optional[int],
-        pretrained: bool,
-        num_classes: int,
-        drop: float,
-        drop_path: Optional[float],
-        drop_block: Optional[float],
-        gp: Optional[str],  # aka global pool
-        bn_momentum: Optional[float],
-        bn_eps: Optional[float],
-        initial_checkpoint: str,
-        torchscript: bool,
-        cls_token_per_teacher: bool,
-        cpe_max_size: Optional[int],
-        model_kwargs: dict,  #  e.g. {'return_full_features': True} for E-RADIO
-        teachers: List[dict],
-        register_multiple: int,
-        spectral_reparam: bool,
-        model_norm: bool,
+        create_model_kwargs: dict,
+        # model: str,
+        # in_chans: Optional[int],
+        # input_size: Optional[int],
+        # pretrained: bool,
+        # num_classes: int,
+        # drop: float,
+        # drop_path: Optional[float],
+        # drop_block: Optional[float],
+        # gp: Optional[str],  # aka global pool
+        # bn_momentum: Optional[float],
+        # bn_eps: Optional[float],
+        # initial_checkpoint: str,
+        # torchscript: bool,
+        # cls_token_per_teacher: bool,
+        # cpe_max_size: Optional[int],
+        # model_kwargs: dict,  #  e.g. {'return_full_features': True} for E-RADIO
+        # teachers: List[dict],
+        # register_multiple: int,
+        # spectral_reparam: bool,
+        # model_norm: bool,
         # Kwargs for conditioner
-        dtype: torch.dtype,
+        dtype: Union[str, torch.dtype],
         input_scale: float = 1.0,
         norm_mean: tuple[float, float, float] = OPENAI_CLIP_MEAN,
         norm_std: tuple[float, float, float] = OPENAI_CLIP_STD,
@@ -81,7 +84,8 @@ class ConfigurableRADIOModel(RADIOModel):
         disable_spectral_reparam: bool = True,  # Default for radio_model_from_args()
         ignore_teachers: bool = False,  # Set to True when only using as a backbone
         pretrained_url: Optional[str] = None,  # Pass in url to load pretrained model here
-        out_stage_indices: Optional[list[int]] = None,  # e.g. (0,1,2,3) for outputs from 4 stages
+        out_indices_layers: Optional[list[int]] = None,  # For get_intermediate_layers() (ViT)
+        out_indices_stages: Optional[list[int]] = None,  # For get_intermediate_stages() (FasterViT)
     ) -> None:
         # Store all kwargs for analyzing later (following https://stackoverflow.com/a/73158104/12422298)
         func_params = inspect.signature(ConfigurableRADIOModel.__init__).parameters
@@ -94,41 +98,50 @@ class ConfigurableRADIOModel(RADIOModel):
         if ignore_teachers:
             teachers = []
 
-        self._model_kwargs = dict(
-            model=model,
-            in_chans=in_chans,
-            input_size=input_size,
-            pretrained=pretrained,
-            num_classes=num_classes,
-            drop=drop,
-            drop_path=drop_path,
-            drop_block=drop_block,
-            gp=gp,
-            bn_momentum=bn_momentum,
-            bn_eps=bn_eps,
-            initial_checkpoint=initial_checkpoint,
-            torchscript=torchscript,
-            cls_token_per_teacher=cls_token_per_teacher,
-            cpe_max_size=cpe_max_size,
-            model_kwargs=model_kwargs,
-            teachers=teachers,
-            register_multiple=register_multiple,
-            spectral_reparam=spectral_reparam,
-            model_norm=model_norm,
-        )
-        model = create_model_from_args(Namespace(**self._model_kwargs))
+        # self._create_model_kwargs = dict(
+        #     model=model,
+        #     in_chans=in_chans,
+        #     input_size=input_size,
+        #     pretrained=pretrained,
+        #     num_classes=num_classes,
+        #     drop=drop,
+        #     drop_path=drop_path,
+        #     drop_block=drop_block,
+        #     gp=gp,
+        #     bn_momentum=bn_momentum,
+        #     bn_eps=bn_eps,
+        #     initial_checkpoint=initial_checkpoint,
+        #     torchscript=torchscript,
+        #     cls_token_per_teacher=cls_token_per_teacher,
+        #     cpe_max_size=cpe_max_size,
+        #     model_kwargs=model_kwargs,
+        #     teachers=teachers,
+        #     register_multiple=register_multiple,
+        #     spectral_reparam=spectral_reparam,
+        #     model_norm=model_norm,
+        # )
+        self._create_model_kwargs = create_model_kwargs
+        model = create_model_from_args(Namespace(**create_model_kwargs))
 
-        self._out_indices = None
-        if out_stage_indices is not None and len(out_stage_indices) > 0:
-            # Convert stage indices to block indices for ViT
-            if isinstance(model, VisionTransformer):
-                pass
+        # Currently we use out_indices_layers for ViT and out_indices_stages for FasterViT
+        # Any other backbones should be configured independently of RADIO
+        assert not (
+            out_indices_layers is not None and out_indices_stages is not None
+        ), "Cannot set both out_indices_layers and out_indices_stages"
 
-            # We to wrap FasterViT to implement get_intermediate_layers()
-            elif isinstance(model, )
+        if out_indices_layers is not None:
+            assert isinstance(model, VisionTransformer) and model.hasattr(
+                "get_intermediate_layers"
+            ), f"Expected VisionTransformer model when out_indices_layers is not None"
+        self._out_indices_layers = out_indices_layers
 
-            # TODO: raise RuntimeError if it's not one of these models (for now)
+        if out_indices_stages is not None:
+            assert isinstance(model, MultiResERADIOModel) and model.hasattr(
+                "get_intermediate_stages"
+            ), f"Expected MultiResERADIOModel when out_indices_stages is not None"
+        self._out_indices_stages = out_indices_stages
 
+        spectral_reparam = create_model_kwargs.get("spectral_reparam", False)
         if spectral_reparam and disable_spectral_reparam:
             # Spectral reparametrization uses PyTorch's "parametrizations" API. The idea behind
             # the method is that instead of there being a `weight` tensor for certain Linear layers
@@ -139,6 +152,16 @@ class ConfigurableRADIOModel(RADIOModel):
             # This makes the model run faster, and also use less memory.
             disable_spectral_reparam(model)
             spectral_reparam = False
+
+        if isinstance(dtype, str):
+            if dtype == "float32":
+                dtype = torch.float32
+            elif dtype == "float16":
+                dtype = torch.float16
+            elif dtype == "bfloat16":
+                dtype = torch.bfloat16
+            else:
+                raise RuntimeError(f"Unsupported dtype str value: {dtype}. ")
 
         self._spectral_reparam = spectral_reparam
         self._conditioner_kwargs = dict(
@@ -159,6 +182,8 @@ class ConfigurableRADIOModel(RADIOModel):
         ), "Expected adaptor_cfgs to be dict from adaptor names to per-adaptor configs"
 
         adaptors = dict()
+        teachers = create_model_kwargs.get("teachers", [])
+
         summary_idxs = torch.tensor(
             [i for i, t in enumerate(teachers) if t.get("use_summary", True)], dtype=torch.int64
         )
@@ -228,7 +253,7 @@ class ConfigurableRADIOModel(RADIOModel):
             # Load state dict after, so the creation and loading are independent (for mmdetection)
             self.load_pretrained_state_dict(url=pretrained_url)
 
-    def forward(self, x: torch.Tensor) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
+    def forward(self, x: torch.Tensor) -> Union[RadioOutput, list[RadioOutput]]:
         """Same as RADIOModel.forward() but don't automatically cast the features to fp32.
 
         Using fp32 is prohibitive for super high-resolution images.
@@ -244,64 +269,89 @@ class ConfigurableRADIOModel(RADIOModel):
         x = self.input_conditioner(x)
 
         # Return multi-resolution features matching self.out_indices
-        if isinstance(self.model, VisionTransformer) and self.out_indices is not None len(self.out_indices) > 0:
-
-        y = self.model.forward_features(x)
-
-        if isinstance(self.model, VisionTransformer):
-            patch_gen = getattr(self.model, "patch_generator", None)
-            if patch_gen is not None:
-                all_summary = y[:, : patch_gen.num_cls_tokens]
-                if self.summary_idxs is not None:
-                    bb_summary = all_summary[:, self.summary_idxs]
-                else:
-                    bb_summary = all_summary
-                all_feat = y[:, patch_gen.num_skip :]
-            elif self.model.global_pool == "avg":
-                all_summary = y[:, self.model.num_prefix_tokens :].mean(dim=1)
-                bb_summary = all_summary
-                all_feat = y
-            else:
-                all_summary = y[:, 0]
-                bb_summary = all_summary
-                all_feat = y[:, 1:]
-        elif isinstance(self.model, eradio_model.FasterViT):
-            _, f = y
-            all_feat = f.flatten(2).transpose(1, 2)
-            all_summary = all_feat.mean(dim=1)
-            bb_summary = all_summary
-        elif isinstance(y, (list, tuple)):
-            all_summary, all_feat = y
-            bb_summary = all_summary
+        if self._out_indices_layers is not None:
+            self.model: VisionTransformer
+            torch._assert(isinstance(self.model, VisionTransformer))
+            features: list[Tensor] = self.model.get_intermediate_layers(
+                x,
+                n=self._out_indices_layers,
+                norm=self._intermediate_features_norm,
+            )
+        elif self._out_indices_stages is not None:
+            self.model: MultiResERADIOModel
+            torch._assert(isinstance(self.model, MultiResERADIOModel))
+            features: list[Tensor] = self.model.get_intermediate_stages(
+                x,
+                n=self._out_indices_stages,
+                norm=self._intermediate_features_norm,
+            )
         else:
-            raise ValueError("Unsupported model type")
+            y = self.model.forward_features(x)
+            features = [y]
 
-        ret = RadioOutput(bb_summary.flatten(1), all_feat)
+        outputs: list[RadioOutput] = []
+        for y in features:
 
-        if self._cast_outputs_to_fp32:
-            all_feat = all_feat.float()
-            ret = ret.to(torch.float32)
-
-        if self.adaptors:
-            ret = dict(backbone=ret)
-            for name, adaptor in self.adaptors.items():
-                if all_summary.ndim == 3:
-                    summary = all_summary[:, adaptor.head_idx]
+            if isinstance(self.model, VisionTransformer):
+                patch_gen = getattr(self.model, "patch_generator", None)
+                if patch_gen is not None:
+                    all_summary = y[:, : patch_gen.num_cls_tokens]
+                    if self.summary_idxs is not None:
+                        bb_summary = all_summary[:, self.summary_idxs]
+                    else:
+                        bb_summary = all_summary
+                    all_feat = y[:, patch_gen.num_skip :]
+                elif self.model.global_pool == "avg":
+                    all_summary = y[:, self.model.num_prefix_tokens :].mean(dim=1)
+                    bb_summary = all_summary
+                    all_feat = y
                 else:
-                    summary = all_summary
+                    all_summary = y[:, 0]
+                    bb_summary = all_summary
+                    all_feat = y[:, 1:]
+            elif isinstance(self.model, eradio_model.FasterViT):
+                _, f = y
+                all_feat = f.flatten(2).transpose(1, 2)
+                all_summary = all_feat.mean(dim=1)
+                bb_summary = all_summary
+            elif isinstance(y, (list, tuple)):
+                all_summary, all_feat = y
+                bb_summary = all_summary
+            else:
+                raise ValueError("Unsupported model type")
 
-                if self._cast_outputs_to_fp32:
-                    summary = summary.float()
+            ret = RadioOutput(bb_summary.flatten(1), all_feat)
 
-                ada_input = AdaptorInput(images=x, summary=summary, features=all_feat)
-                v = adaptor(ada_input).to(torch.float32)
-                ret[name] = v
+            if self._cast_outputs_to_fp32:
+                all_feat = all_feat.float()
+                ret = ret.to(torch.float32)
 
-        return ret
+            if self.adaptors:
+                ret = dict(backbone=ret)
+                for name, adaptor in self.adaptors.items():
+                    if all_summary.ndim == 3:
+                        summary = all_summary[:, adaptor.head_idx]
+                    else:
+                        summary = all_summary
+
+                    if self._cast_outputs_to_fp32:
+                        summary = summary.float()
+
+                    ada_input = AdaptorInput(images=x, summary=summary, features=all_feat)
+                    v = adaptor(ada_input).to(torch.float32)
+                    ret[name] = v
+
+            outputs.append(ret)
+
+        # Return a list only if out_indices is not None
+        if len(outputs) == 1:
+            return outputs[0]
+        else:
+            return outputs
 
     @property
-    def model_kwargs(self) -> dict:
-        return self._model_kwargs
+    def create_model_kwargs(self) -> dict:
+        return self._create_model_kwargs
 
     @property
     def conditioner_kwargs(self) -> dict:

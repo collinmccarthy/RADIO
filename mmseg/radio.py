@@ -1,3 +1,4 @@
+# fmt: off
 # Copyright (c) 2023-2024, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -11,8 +12,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import sys
 import math
 from typing import List, Optional
+from pathlib import Path
 import warnings
 
 from mmengine.model import BaseModule
@@ -60,16 +63,23 @@ class RADIO(BaseModule):
         _, features = self.base_model(x)
 
         if isinstance(self.base_model.model, VisionTransformer):
-            # Reshape
-            B, _, C = features.shape
-
             if hasattr(self.base_model.model, "patch_generator"):
                 # Cropped Positional Embedding (CPE) case.
                 patch_height = patch_width = self.base_model.model.patch_generator.patch_size
             else:
                 # Standard ViT case.
                 patch_height, patch_width = self.base_model.model.patch_embed.patch_size
-            features = features.reshape(B, math.ceil(H/patch_height), math.ceil(W/patch_width),  C).permute(0, 3, 1, 2).contiguous()
+
+        else:  #  isinstance(self.base_model.model.patch_embed, radio.eradio_model.PatchEmbed):
+            patch_height, patch_width = 16, 16
+
+        # Reshape
+        B, _, C = features.shape
+        features = (
+            features.reshape(B, math.ceil(H / patch_height), math.ceil(W / patch_width), C)
+            .permute(0, 3, 1, 2)
+            .contiguous()
+        )
 
         # IMPORTANT: prevent gradients from flowing back towards the backbone.
         features = features.detach()
@@ -85,8 +95,7 @@ class RADIO(BaseModule):
 
     def init_weights(self):
         # This is a no-op as the model weights are loaded during instantiation.
-        if (isinstance(self.init_cfg, dict)
-                and self.init_cfg.get('type') == 'Pretrained'):
+        if isinstance(self.init_cfg, dict) and self.init_cfg.get("type") == "Pretrained":
             pass
         else:
             raise ValueError(f"Unhandled case: {self.init_cfg}")

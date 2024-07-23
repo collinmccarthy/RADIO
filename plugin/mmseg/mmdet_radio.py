@@ -13,11 +13,12 @@ from mmseg.models.builder import BACKBONES
 # Hack: add top-level module to path until setup.py exists or PYTHON_PATH has been updated
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))  # Top-level `RADIO` project dir
 
+from radio.radio_model import RadioOutput
 from plugin.radio.configurable_radio_model import ConfigurableRADIOModel
 
 
 @BACKBONES.register_module()
-class ConfigurableRADIO(ConfigurableRADIOModel, BaseModule):
+class MMDetRADIO(ConfigurableRADIOModel, BaseModule):
     """Wrapper ConfigurableRADIOModel for mmsegmentation.
 
     NOTE: Inputs should NOT be normalized outside of this class, e.g. in SegDataPreProcessor or
@@ -37,8 +38,7 @@ class ConfigurableRADIO(ConfigurableRADIOModel, BaseModule):
         self,
         *args,
         frozen: bool = True,
-        skip_conditioner: bool = False,
-        teachers: list[dict],
+        teachers: list[dict] = [],
         ignore_teachers: bool = True,
         cast_outputs_to_fp32: bool = False,
         init_cfg: Optional[dict] = None,
@@ -69,11 +69,10 @@ class ConfigurableRADIO(ConfigurableRADIOModel, BaseModule):
             )
 
         self._frozen_features = frozen
-        self._skip_conditioner = skip_conditioner
 
     def make_preprocessor_external(self):
         raise RuntimeError(
-            "ConfigurableRADIO scales inputs to range [0,1] before using input_conditioner."
+            "MMDetRADIO scales inputs to range [0,1] before using input_conditioner."
             " If making preprocessor external, the inputs will still be scaled in this method which"
             " will require changing the input conditioner. Recommend keeping the default"
             " conditioner and passing in unnormalized inputs."
@@ -94,37 +93,46 @@ class ConfigurableRADIO(ConfigurableRADIOModel, BaseModule):
         # Scale inputs to the range [0,1] for default conditioner
         x = x / 255.0
 
-        _, features = self(x)
+        # Unlike RADIOModel, our ConfigurableRADIOModel returns a list if out_indices is not None
+        outputs: Union[RadioOutput, list[RadioOutput]] = super().forward(x)
 
-        if isinstance(self.model, VisionTransformer):
-            # Reshape
-            B, _, C = features.shape
+        if not isinstance(outputs, (list, tuple)):
+            outputs = [outputs]
 
-            if hasattr(self.model, "patch_generator"):
-                # Cropped Positional Embedding (CPE) case
-                patch_height = patch_width = self.model.patch_generator.patch_size
-            else:
-                # Standard ViT case.
-                patch_height, patch_width = self.model.patch_embed.patch_size
+        output_features_list = []
+        for radio_output in outputs:
+            features = radio_output.features
+            if isinstance(self.model, VisionTransformer):
+                # Reshape
+                B, _, C = features.shape
 
-            # We only need to reshape and permute for RADIO (ViT); E-RADIO is already NHWC
-            features = (
-                features.reshape(B, math.ceil(H / patch_height), math.ceil(W / patch_width), C)
-                .permute(0, 3, 1, 2)
-                .contiguous()
+                if hasattr(self.model, "patch_generator"):
+                    # Cropped Positional Embedding (CPE) case
+                    patch_height = patch_width = self.model.patch_generator.patch_size
+                else:
+                    # Standard ViT case.
+                    patch_height, patch_width = self.model.patch_embed.patch_size
+
+                # We only need to reshape and permute for RADIO (ViT); E-RADIO is already NHWC
+                features = (
+                    features.reshape(B, math.ceil(H / patch_height), math.ceil(W / patch_width), C)
+                    .permute(0, 3, 1, 2)
+                    .contiguous()
+                )
+
+            torch._assert(
+                features.ndim == 4, f"Expected NHWC features tensor, found ndim={features.ndim}"
             )
 
-        torch._assert(
-            features.ndim == 4, f"Expected NHWC features tensor, found ndim={features.ndim}"
-        )
+            if self._frozen_features:
+                # Prevent gradients from flowing back of features are frozen
+                # If we allow features to be updated using solely the downstream task loss we will lose
+                # the ability to use any of the adaptors for other VLM tasks
+                features = features.detach()
 
-        if self._frozen_features:
-            # Prevent gradients from flowing back of features are frozen
-            # If we allow features to be updated using solely the downstream task loss we will lose
-            # the ability to use any of the adaptors for other VLM tasks
-            features = features.detach()
+            output_features_list.append(features)
 
-        return [features]
+        return output_features_list
 
     def train(self, mode=True):
         """Intercept call."""
@@ -136,7 +144,7 @@ class ConfigurableRADIO(ConfigurableRADIOModel, BaseModule):
             checkpoint = self.init_cfg.get("checkpoint", None)
             if checkpoint is None:
                 raise RuntimeError(
-                    f"ConfigurableRADIO expects checkpoint URL, e.g."
+                    f"MMDetRADIO expects checkpoint URL, e.g."
                     f" https://huggingface.co/nvidia/RADIO/resolve/main/radio_v2.1_bf16.pth.tar?download=true"
                 )
 

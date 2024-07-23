@@ -199,26 +199,30 @@ def main(adaptor_cfgs: Optional[dict] = None):
             adaptor_cfgs=adaptor_cfgs,
             vitdet_window_size=getattr(radio_args, "vitdet_window_size", None),
             # Kwargs for create_model()
-            model=radio_args.model,
-            in_chans=radio_args.in_chans,
-            input_size=radio_args.input_size,
-            pretrained=radio_args.pretrained,
-            num_classes=radio_args.num_classes,
-            drop=radio_args.drop,
-            drop_path=radio_args.drop_path,
-            drop_block=radio_args.drop_block,
-            gp=radio_args.gp,
-            bn_momentum=radio_args.bn_momentum,
-            bn_eps=radio_args.bn_eps,
-            initial_checkpoint=radio_args.initial_checkpoint,
-            torchscript=radio_args.torchscript,
-            cls_token_per_teacher=radio_args.cls_token_per_teacher,
-            cpe_max_size=radio_args.cpe_max_size,
-            model_kwargs=radio_args.model_kwargs,
-            teachers=radio_args.teachers,
-            register_multiple=radio_args.register_multiple,
-            spectral_reparam=getattr(radio_args, "spectral_reparam", False),  # Not in every ckpt
-            model_norm=getattr(radio_args, "model_norm", False),  # Not in every ckpt
+            create_model_kwargs=dict(
+                model=radio_args.model,
+                in_chans=radio_args.in_chans,
+                input_size=radio_args.input_size,
+                pretrained=radio_args.pretrained,
+                num_classes=radio_args.num_classes,
+                drop=radio_args.drop,
+                drop_path=radio_args.drop_path,
+                drop_block=radio_args.drop_block,
+                gp=radio_args.gp,
+                bn_momentum=radio_args.bn_momentum,
+                bn_eps=radio_args.bn_eps,
+                initial_checkpoint=radio_args.initial_checkpoint,
+                torchscript=radio_args.torchscript,
+                cls_token_per_teacher=radio_args.cls_token_per_teacher,
+                cpe_max_size=radio_args.cpe_max_size,
+                model_kwargs=radio_args.model_kwargs,
+                teachers=radio_args.teachers,
+                register_multiple=radio_args.register_multiple,
+                spectral_reparam=getattr(
+                    radio_args, "spectral_reparam", False
+                ),  # Not in every ckpt
+                model_norm=getattr(radio_args, "model_norm", False),  # Not in every ckpt
+            ),
             # Kwargs for conditioner
             dtype=getattr(radio_args, "dtype", torch.float32),  # Not in every ckpt
             # Other kwargs
@@ -261,7 +265,7 @@ def main(adaptor_cfgs: Optional[dict] = None):
         logger.info("- " * 40)
         logger.info("Create model kwargs")
         logger.info("- " * 40)
-        logger.info("\n" + pprint.pformat(model.model_kwargs, sort_dicts=False))
+        logger.info("\n" + pprint.pformat(model.create_model_kwargs, sort_dicts=False))
 
         logger.info("- " * 40)
         logger.info("Radio kwargs")

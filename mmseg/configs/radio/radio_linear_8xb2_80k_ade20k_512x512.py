@@ -1,3 +1,4 @@
+# fmt: off
 import os
 
 _base_ = [
@@ -38,7 +39,9 @@ model = dict(
         num_classes=150,
         norm_cfg=dict(type="SyncBN", requires_grad=True),
         align_corners=False,
-        loss_decode=dict(type="CrossEntropyLoss", use_sigmoid=False, loss_weight=1.0),
+        loss_decode=dict(
+            type="CrossEntropyLoss", use_sigmoid=False, loss_weight=1.0
+        )
     ),
     # model training and testing settings
     train_cfg=dict(),
@@ -72,11 +75,16 @@ param_scheduler = [
     ),
 ]
 
+data_root = "/lustre/fs2/portfolios/nvr/projects/nvr_lpr_nvgptvision/datasets/ade20k/ADEChallengeData2016"
+
 # By default, models are trained on 8 GPUs with 2 images per GPU
-train_dataloader = dict(batch_size=2)
+train_dataloader = dict(
+    batch_size=2,
+    dataset=dict(data_root=data_root))
 val_dataloader = dict(
     batch_size=1,
     dataset=dict(
+        data_root=data_root,
         pipeline=[
             dict(type="LoadImageFromFile"),
             dict(type="Resize", scale=(2048, 512), keep_ratio=True),
@@ -98,6 +106,14 @@ find_unused_parameters = True
 vis_backends = [
     dict(type="LocalVisBackend"),
 ]
+
+if "WANDB_API_KEY" in os.environ:
+    vis_backends.append(
+        dict(
+            type="WandbVisBackend",
+            init_kwargs=dict(entity="adlr", project="evfm", group="ade20k"),
+        )
+    )
 
 visualizer = dict(
     type="SegLocalVisualizer", vis_backends=vis_backends, name="visualizer"

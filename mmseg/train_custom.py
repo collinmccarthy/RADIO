@@ -24,7 +24,7 @@ from mmengine.config import Config, DictAction
 from mmengine.logging import print_log
 from mmengine.runner import Runner
 from mmengine.evaluator import DumpResults  # Added
-
+from mmengine.dist import is_main_process
 from mmseg.registry import RUNNERS
 
 # Wildcard imports are considered bad practice but in this instance they
@@ -36,9 +36,7 @@ from radio import *
 def parse_args():
     parser = argparse.ArgumentParser(description="Train a segmentor")
     parser.add_argument("config", help="train config file path")
-    parser.add_argument(
-        "--work-dir", "--output", help="the dir to save logs and models"
-    )
+    parser.add_argument("--work-dir", "--output", help="the dir to save logs and models")
     parser.add_argument(
         "--resume",
         action="store_true",
@@ -68,11 +66,13 @@ def parse_args():
         default="none",
         help="job launcher",
     )
+    parser.add_argument("--train", action="store_true", default=False, help="Train the model")
+    parser.add_argument("--test", action="store_true", default=False, help="Test the model")
     parser.add_argument(
-        "--train", action="store_true", default=False, help="Train the model"
-    )
-    parser.add_argument(
-        "--test", action="store_true", default=False, help="Test the model"
+        "--no-wandb",
+        "--no_wandb",
+        action="store_true",
+        help="Skip wandb if it otherwise would be used",
     )
     parser.add_argument(
         "--test-out",
@@ -112,23 +112,31 @@ def main():
         cfg.work_dir = args.work_dir
     elif cfg.get("work_dir", None) is None:
         # use config filename as default work_dir if cfg.work_dir is None
-        cfg.work_dir = osp.join(
-            "./work_dirs", osp.splitext(osp.basename(args.config))[0]
-        )
+        cfg.work_dir = osp.join("./work_dirs", osp.splitext(osp.basename(args.config))[0])
 
-    for vis_backend in cfg.visualizer.vis_backends:
-        if vis_backend.type == "WandbVisBackend":
-            # Name the job type after config file name.
-            job_type = osp.splitext(osp.basename(args.config))[0]
-            # Name the job after the last part of the work directory.
-            job_name = cfg.work_dir.split("/")[-1]
-            # Hash job name into a 8-digit id.
-            job_id = hashlib.sha256(job_name.encode()).hexdigest()[:8]
-            vis_backend.init_kwargs.job_type = job_type
-            vis_backend.init_kwargs.name = job_name
-            vis_backend.init_kwargs.id = job_id
-            vis_backend.init_kwargs.resume = "allow"
-            vis_backend.init_kwargs.allow_val_change = True
+    if args.no_wandb:
+        cfg.visualizer.vis_backends = [
+            vis_backend
+            for vis_backend in cfg.visualizer.vis_backends
+            if vis_backend.type != "WandbVisBackend"
+        ]
+    else:
+        for vis_backend in cfg.visualizer.vis_backends:
+            if vis_backend.type == "WandbVisBackend":
+                # Name the job type after config file name.
+                job_type = osp.splitext(osp.basename(args.config))[0]
+                # Name the job after the last part of the work directory.
+                job_name = cfg.work_dir.split("/")[-1]
+
+                # UPDATE: Don't force the job id, if we delete the folder, let it create a new id
+                # Hash job name into a 8-digit id.
+                # job_id = hashlib.sha256(job_name.encode()).hexdigest()[:8]
+                # vis_backend.init_kwargs.id = job_id
+
+                vis_backend.init_kwargs.job_type = job_type
+                vis_backend.init_kwargs.name = job_name
+                vis_backend.init_kwargs.resume = "allow"
+                vis_backend.init_kwargs.allow_val_change = True
 
     # enable automatic-mixed-precision training
     if args.amp is True:
@@ -165,12 +173,8 @@ def main():
     elif args.test and not args.train:
         if args.test_out is not None and args.test_out_item in ["pred", None]:
             # Add `DumpResults` dummy metric
-            assert args.test_out.endswith(
-                (".pkl", ".pickle")
-            ), "The dump file must be a pkl file."
-            runner.test_evaluator.metrics.append(
-                DumpResults(out_file_path=args.test_out)
-            )
+            assert args.test_out.endswith((".pkl", ".pickle")), "The dump file must be a pkl file."
+            runner.test_evaluator.metrics.append(DumpResults(out_file_path=args.test_out))
 
         metrics = runner.test()
 
