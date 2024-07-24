@@ -52,6 +52,8 @@ class ConfigurableRADIOModel(RADIOModel):
         preferred_resolution: Union[dict, Resolution],
         adaptor_cfgs: Optional[dict[str, Union[dict, Namespace]]],  # instead of adaptor_names
         vitdet_window_size: Optional[int],
+        vitdet_num_windowed: Optional[int],
+        vitdet_num_global: Optional[int],
         # Kwargs for create_model(), from checkpoint['args'] with same names unless specified
         create_model_kwargs: dict,
         # model: str,
@@ -247,7 +249,15 @@ class ConfigurableRADIOModel(RADIOModel):
         super().__init__(model=model, input_conditioner=conditioner, **self._radio_kwargs)
 
         if vitdet_window_size is not None:
-            apply_vitdet_arch(model, VitDetArgs(vitdet_window_size, self.num_summary_tokens))
+            apply_vitdet_arch(
+                model,
+                VitDetArgs(
+                    vitdet_window_size,
+                    self.num_summary_tokens,
+                    num_windowed=vitdet_num_windowed,
+                    num_global=vitdet_num_global,
+                ),
+            )
 
         if pretrained_url is not None:
             # Load state dict after, so the creation and loading are independent (for mmdetection)

@@ -1,3 +1,4 @@
+# fmt: off
 #!/usr/bin/env python3
 
 # Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
@@ -1287,6 +1288,447 @@ class ERADIO(nn.Module):
         #     print(f"Setting window size to {new_window_size} for image resolution {image_dim}")
 
         self.change_window_size(new_window_size = new_window_size)
+
+# UPDATED: Keeping old FasterViT model definitions
+#          The model used to be called "FasterViT" but that has been renamed to ERADIO
+# 83.44200001953125
+@register_model
+def fastervit2_small(pretrained=False, **kwargs): #,
+    model = ERADIO(depths=[3, 3, 5, 5],
+                     num_heads=[2, 4, 8, 16],
+                     window_size=[8, 8, [7, 7], 7],
+                     dim=96,
+                     in_dim=64,
+                     mlp_ratio=4,
+                     drop_path_rate=0.2,
+                     sr_ratio=[1, 1, [1, 2], 1],
+                     use_swiglu=False,
+                     downsample_shuffle=False,
+                     yolo_arch=True,
+                     shuffle_down=False,
+                     **kwargs)
+    if pretrained:
+        model.load_state_dict(torch.load(pretrained)["state_dict"])
+    return model
+
+# 82.61
+@register_model
+def fastervit2_tiny(pretrained=False, **kwargs): #,
+    model = ERADIO(depths=[1, 3, 4, 5],
+                     num_heads=[2, 4, 8, 16],
+                     window_size=[8, 8, [7, 7], 7],
+                     dim=80,
+                     in_dim=64,
+                     mlp_ratio=4,
+                     drop_path_rate=0.2,
+                     sr_ratio=[1, 1, [2, 1], 1],
+                     use_swiglu=False,
+                     downsample_shuffle=False,
+                     yolo_arch=True,
+                     shuffle_down=False,
+                     **kwargs)
+    if pretrained:
+        model.load_state_dict(torch.load(pretrained)["state_dict"])
+    return model
+
+#'top1', 84.31800001220704
+@register_model
+def fastervit2_base(pretrained=False, **kwargs):
+    model = ERADIO(depths=[3, 3, 5, 5],
+                     num_heads=[2, 4, 8, 16],
+                     window_size=[8, 8, [7, 7], 7],
+                     dim=128,
+                     in_dim=64,
+                     mlp_ratio=4,
+                     drop_path_rate=0.2,
+                     sr_ratio=[1, 1, [2, 1], 1],
+                     use_swiglu=False,
+                     yolo_arch=True,
+                     shuffle_down=False,
+                     conv_base=True,
+                     **kwargs)
+    if pretrained:
+        model.load_state_dict(torch.load(pretrained)["state_dict"])
+    return model
+
+#84.39999999267579
+@register_model
+def fastervit2_base_v1(pretrained=False, **kwargs):
+    model = ERADIO(depths=[4, 4, 5, 5],
+                     num_heads=[2, 4, 8, 16],
+                     window_size=[8, 8, [7, 7], 7],
+                     dim=128,
+                     in_dim=64,
+                     mlp_ratio=4,
+                     drop_path_rate=0.2,
+                     sr_ratio=[1, 1, [2, 1], 1],
+                     use_swiglu=False,
+                     yolo_arch=True,
+                     shuffle_down=False,
+                     conv_base=True,
+                     downsample_shuffle=False,
+                     **kwargs)
+    if pretrained:
+        model.load_state_dict(torch.load(pretrained)["state_dict"])
+    return model
+
+@register_model
+def fastervit2_base_fullres1(pretrained=False, **kwargs):
+    model = ERADIO(depths=[3, 3, 5, 5],
+                     num_heads=[2, 4, 8, 16],
+                     window_size=[8, 8, [7, 7], 7],
+                     dim=128,
+                     in_dim=64,
+                     mlp_ratio=4,
+                     drop_path_rate=0.2,
+                     sr_ratio=[1, 1, [2, 1], 1],
+                     use_swiglu=False,
+                     yolo_arch=True,
+                     shuffle_down=False,
+                     conv_base=True,
+                     use_neck=True,
+                     full_features_head_dim=1024,
+                     neck_start_stage=2,
+                     **kwargs)
+    if pretrained:
+        model.load_state_dict(torch.load(pretrained)["state_dict"])
+    return model
+
+@register_model
+def fastervit2_base_fullres2(pretrained=False, **kwargs):
+    model = ERADIO(depths=[3, 3, 5, 5],
+                     num_heads=[2, 4, 8, 16],
+                     window_size=[8, 8, [7, 7], 7],
+                     dim=128,
+                     in_dim=64,
+                     mlp_ratio=4,
+                     drop_path_rate=0.2,
+                     sr_ratio=[1, 1, [2, 1], 1],
+                     use_swiglu=False,
+                     yolo_arch=True,
+                     shuffle_down=False,
+                     conv_base=True,
+                     use_neck=True,
+                     full_features_head_dim=512,
+                     neck_start_stage=1,
+                     **kwargs)
+    if pretrained:
+        model.load_state_dict(torch.load(pretrained)["state_dict"])
+    return model
+
+@register_model
+def fastervit2_base_fullres3(pretrained=False, **kwargs):
+    model = ERADIO(depths=[3, 3, 5, 5],
+                     num_heads=[2, 4, 8, 16],
+                     window_size=[8, 8, [7, 7], 7],
+                     dim=128,
+                     in_dim=64,
+                     mlp_ratio=4,
+                     drop_path_rate=0.2,
+                     sr_ratio=[1, 1, [2, 1], 1],
+                     use_swiglu=False,
+                     yolo_arch=True,
+                     shuffle_down=False,
+                     conv_base=True,
+                     use_neck=True,
+                     full_features_head_dim=256,
+                     neck_start_stage=1,
+                     **kwargs)
+    if pretrained:
+        model.load_state_dict(torch.load(pretrained)["state_dict"])
+    return model
+
+@register_model
+def fastervit2_base_fullres4(pretrained=False, **kwargs):
+    model = ERADIO(depths=[3, 3, 5, 5],
+                     num_heads=[2, 4, 8, 16],
+                     window_size=[8, 8, [7, 7], 7],
+                     dim=128,
+                     in_dim=64,
+                     mlp_ratio=4,
+                     drop_path_rate=0.2,
+                     sr_ratio=[1, 1, [2, 1], 1],
+                     use_swiglu=False,
+                     yolo_arch=True,
+                     shuffle_down=False,
+                     conv_base=True,
+                     use_neck=True,
+                     full_features_head_dim=256,
+                     neck_start_stage=2,
+                     **kwargs)
+    if pretrained:
+        model.load_state_dict(torch.load(pretrained)["state_dict"])
+    return model
+
+@register_model
+def fastervit2_base_fullres5(pretrained=False, **kwargs):
+    model = ERADIO(depths=[3, 3, 5, 5],
+                     num_heads=[2, 4, 8, 16],
+                     window_size=[8, 8, [7, 7], 7],
+                     dim=128,
+                     in_dim=64,
+                     mlp_ratio=4,
+                     drop_path_rate=0.2,
+                     sr_ratio=[1, 1, [2, 1], 1],
+                     use_swiglu=False,
+                     yolo_arch=True,
+                     shuffle_down=False,
+                     conv_base=True,
+                     use_neck=True,
+                     full_features_head_dim=512,
+                     neck_start_stage=2,
+                     **kwargs)
+    if pretrained:
+        model.load_state_dict(torch.load(pretrained)["state_dict"])
+    return model
+
+#84.87
+@register_model
+def fastervit2_large(pretrained=False, **kwargs):
+    model = ERADIO(depths=[3, 3, 5, 5],
+                     num_heads=[2, 4, 8, 16],
+                     window_size=[8, 8, [7, 7], 7],
+                     dim=128+64,
+                     in_dim=64,
+                     mlp_ratio=4,
+                     drop_path_rate=0.3,
+                     sr_ratio=[1, 1, [2, 1], 1],
+                     use_swiglu=False,
+                     yolo_arch=False,
+                     shuffle_down=False,
+                     cpb_mlp_hidden=64,
+                     conv_base=True,
+                     **kwargs)
+    if pretrained:
+        model.load_state_dict(torch.load(pretrained)["state_dict"])
+    return model
+
+@register_model
+def fastervit2_large_fullres(pretrained=False, **kwargs):
+    model = ERADIO(
+        depths=[3, 3, 5, 5],
+        num_heads=[2, 4, 8, 16],
+        window_size=[None, None, [7, 7], 7],
+        dim=192,
+        in_dim=64,
+        mlp_ratio=4,
+        drop_path_rate=0.0,
+        sr_ratio=[1, 1, [2, 1], 1],
+        use_swiglu=False,
+        yolo_arch=True,
+        shuffle_down=False,
+        conv_base=True,
+        use_neck=True,
+        full_features_head_dim=1536,
+        neck_start_stage=2,
+        **kwargs,
+    )
+    if pretrained:
+        model.load_state_dict(torch.load(pretrained)["state_dict"])
+    return model
+
+
+@register_model
+def fastervit2_large_fullres_ws8(pretrained=False, **kwargs):
+    model = ERADIO(
+        depths=[3, 3, 5, 5],
+        num_heads=[2, 4, 8, 16],
+        window_size=[None, None, [8, 8], 8],
+        dim=192,
+        in_dim=64,
+        mlp_ratio=4,
+        drop_path_rate=0.0,
+        sr_ratio=[1, 1, [2, 1], 1],
+        use_swiglu=False,
+        yolo_arch=True,
+        shuffle_down=False,
+        conv_base=True,
+        use_neck=True,
+        full_features_head_dim=1536,
+        neck_start_stage=2,
+        **kwargs,
+    )
+    if pretrained:
+        model.load_state_dict(torch.load(pretrained)["state_dict"])
+    return model
+
+
+@register_model
+def fastervit2_large_fullres_ws16(pretrained=False, **kwargs):
+    model = ERADIO(
+        depths=[3, 3, 5, 5],
+        num_heads=[2, 4, 8, 16],
+        window_size=[None, None, [16, 16], 16],
+        dim=192,
+        in_dim=64,
+        mlp_ratio=4,
+        drop_path_rate=0.0,
+        sr_ratio=[1, 1, [2, 1], 1],
+        use_swiglu=False,
+        yolo_arch=True,
+        shuffle_down=False,
+        conv_base=True,
+        use_neck=True,
+        full_features_head_dim=1536,
+        neck_start_stage=2,
+        **kwargs,
+    )
+    if pretrained:
+        model.load_state_dict(torch.load(pretrained)["state_dict"])
+    return model
+
+
+@register_model
+def fastervit2_large_fullres_ws32(pretrained=False, **kwargs):
+    model = ERADIO(
+        depths=[3, 3, 5, 5],
+        num_heads=[2, 4, 8, 16],
+        window_size=[None, None, [32, 32], 32],
+        dim=192,
+        in_dim=64,
+        mlp_ratio=4,
+        drop_path_rate=0.0,
+        sr_ratio=[1, 1, [2, 1], 1],
+        use_swiglu=False,
+        yolo_arch=True,
+        shuffle_down=False,
+        conv_base=True,
+        use_neck=True,
+        full_features_head_dim=1536,
+        neck_start_stage=2,
+        **kwargs,
+    )
+    if pretrained:
+        model.load_state_dict(torch.load(pretrained)["state_dict"])
+    return model
+
+#85.23% top1
+@register_model
+def fastervit2_xlarge(pretrained=False, **kwargs):
+    model = ERADIO(depths=[3, 3, 5, 5],
+                     num_heads=[2, 4, 8, 16],
+                     window_size=[8, 8, [7, 7], 7],
+                     dim=128+128+64,
+                     in_dim=64,
+                     mlp_ratio=4,
+                     drop_path_rate=0.4,
+                     sr_ratio=[1, 1, [2, 1], 1],
+                     use_swiglu=False,
+                     yolo_arch=False,
+                     shuffle_down=False,
+                     cpb_mlp_hidden=64,
+                     **kwargs)
+    if pretrained:
+        model.load_state_dict(torch.load(pretrained)["state_dict"])
+    return model
+
+@register_model
+def fastervit2_huge(pretrained=False, **kwargs):
+    model = ERADIO(depths=[3, 3, 5, 5],
+                     num_heads=[2, 4, 8, 16],
+                     window_size=[8, 8, [7, 7], 7],
+                     dim=128+128+128+64,
+                     in_dim=64,
+                     mlp_ratio=4,
+                     drop_path_rate=0.2,
+                     sr_ratio=[1, 1, [2, 1], 1],
+                     use_swiglu=False,
+                     yolo_arch=True,
+                     shuffle_down=False,
+                     **kwargs)
+    if pretrained:
+        model.load_state_dict(torch.load(pretrained)["state_dict"])
+    return model
+
+
+# 81.61
+@register_model
+def fastervit2_xtiny(pretrained=False, **kwargs): #,
+    model = ERADIO(depths=[1, 3, 4, 5],
+                     num_heads=[2, 4, 8, 16],
+                     window_size=[8, 8, [7, 7], 7],
+                     dim=64,
+                     in_dim=64,
+                     mlp_ratio=4,
+                     drop_path_rate=0.1,
+                     sr_ratio=[1, 1, [2, 1], 1],
+                     use_swiglu=False,
+                     downsample_shuffle=False,
+                     yolo_arch=True,
+                     shuffle_down=False,
+                     cpb_mlp_hidden=64,
+                     **kwargs)
+    if pretrained:
+        model.load_state_dict(torch.load(pretrained)["state_dict"])
+    return model
+
+
+# 80.19
+@register_model
+def fastervit2_xxtiny(pretrained=False, **kwargs): #,
+    model = ERADIO(depths=[1, 3, 4, 5],
+                     num_heads=[2, 4, 8, 16],
+                     window_size=[8, 8, [7, 7], 7],
+                     dim=48,
+                     in_dim=64,
+                     mlp_ratio=4,
+                     drop_path_rate=0.05,
+                     sr_ratio=[1, 1, [2, 1], 1],
+                     use_swiglu=False,
+                     downsample_shuffle=False,
+                     yolo_arch=True,
+                     shuffle_down=False,
+                     cpb_mlp_hidden=64,
+                     **kwargs)
+    if pretrained:
+        model.load_state_dict(torch.load(pretrained)["state_dict"])
+    return model
+
+@register_model
+# 77.0
+def fastervit2_xxxtiny(pretrained=False, **kwargs): #,
+    model = ERADIO(depths=[1, 3, 4, 5],
+                     num_heads=[2, 4, 8, 16],
+                     window_size=[8, 8, [7, 7], 7],
+                     dim=32,
+                     in_dim=32,
+                     mlp_ratio=4,
+                     drop_path_rate=0.0,
+                     sr_ratio=[1, 1, [2, 1], 1],
+                     use_swiglu=False,
+                     downsample_shuffle=False,
+                     yolo_arch=True,
+                     shuffle_down=False,
+                     cpb_mlp_hidden=64,
+                     **kwargs)
+    if pretrained:
+        model.load_state_dict(torch.load(pretrained)["state_dict"])
+    return model
+
+
+@register_model
+def fastervit2_xxxtiny_fullres(pretrained=False, **kwargs):
+    model = ERADIO(depths=[1, 3, 4, 5],
+                     num_heads=[2, 4, 8, 16],
+                     window_size=[8, 8, [7, 7], 7],
+                     dim=32,
+                     in_dim=32,
+                     mlp_ratio=4,
+                     drop_path_rate=0.0,
+                     sr_ratio=[1, 1, [2, 1], 1],
+                     use_swiglu=False,
+                     downsample_shuffle=False,
+                     yolo_arch=True,
+                     shuffle_down=False,
+                     cpb_mlp_hidden=64,
+                     use_neck=True,
+                     full_features_head_dim=128,
+                     neck_start_stage=1,
+                     conv_groups_ratio = 1,
+                     **kwargs)
+    if pretrained:
+        model.load_state_dict(torch.load(pretrained)["state_dict"])
+    return model
 
 
 @register_model
