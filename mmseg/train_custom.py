@@ -135,7 +135,10 @@ def main():
 
                 vis_backend.init_kwargs.job_type = job_type
                 vis_backend.init_kwargs.name = job_name
-                vis_backend.init_kwargs.resume = "allow"
+
+                # UPDATE: Previously resume="allow" which only works if the same job id is used
+                # Now using "auto" which creates `wandb-resume.json` and auto resumes if it exists
+                vis_backend.init_kwargs.resume = "auto"
                 vis_backend.init_kwargs.allow_val_change = True
 
     # enable automatic-mixed-precision training

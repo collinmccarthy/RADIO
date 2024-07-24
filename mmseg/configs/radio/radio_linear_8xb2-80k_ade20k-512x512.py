@@ -9,6 +9,7 @@ _base_ = [
 
 # model settings
 crop_size = (512, 512)
+patch_size = 16  # UPDATE: ADDED
 norm_cfg = dict(type="SyncBN", requires_grad=True)
 data_preprocessor = dict(
     type="SegDataPreProcessor",
@@ -88,8 +89,8 @@ val_dataloader = dict(
         pipeline=[
             dict(type="LoadImageFromFile"),
             dict(type="Resize", scale=(2048, 512), keep_ratio=True),
-            # Pad inputs to a multiple of the patch size (14).
-            dict(type="Pad", size_divisor=14),
+            # Pad inputs to a multiple of the patch size (16).  # UPDATED: Used to be 14
+            dict(type="Pad", size_divisor=patch_size),
             # add loading annotation after ``Resize`` because ground truth
             # does not need to do resize data transform
             dict(type="LoadAnnotations", reduce_zero_label=True),
