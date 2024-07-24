@@ -1,3 +1,4 @@
+# fmt: off
 # Copyright (c) 2023-2024, NVIDIA CORPORATION.  All rights reserved.
 #
 # NVIDIA CORPORATION and its licensors retain all intellectual property
@@ -5,7 +6,7 @@
 # and any modifications thereto.  Any use, reproduction, disclosure or
 # distribution of this software and related documentation without an express
 # license agreement from NVIDIA CORPORATION is strictly prohibited.
-from typing import Optional, Callable, Union, Tuple, Dict, NamedTuple
+from typing import Optional, Callable, Union, Tuple, Dict, NamedTuple, List
 from enum import Enum
 
 import torch
@@ -137,7 +138,7 @@ class RADIOModel(nn.Module):
                 all_summary = y[:, 0]
                 bb_summary = all_summary
                 all_feat = y[:, 1:]
-        elif isinstance(self.model, eradio_model.FasterViT):
+        elif isinstance(self.model, eradio_model.ERADIO):
             _, f = y
             all_feat = f.flatten(2).transpose(1, 2)
             all_summary = all_feat.mean(dim=1)
@@ -162,6 +163,47 @@ class RADIOModel(nn.Module):
                 ret[name] = v
 
         return ret
+
+    def forward_intermediates(
+            self,
+            x: torch.Tensor,
+            indices: Optional[Union[int, List[int], Tuple[int]]] = None,
+            return_prefix_tokens: bool = False,
+            norm: bool = False,
+            stop_early: bool = False,
+            output_fmt: str = 'NCHW',
+            intermediates_only: bool = False,
+            aggregation: Optional[str] = "sparse",
+    ) -> List[RadioOutput]:
+        """ Forward features that returns intermediates.
+        Args:
+            x: Input image tensor
+            indices: Take last n blocks if int, select matching indices if sequence
+            return_prefix_tokens: Return both prefix and spatial intermediate tokens
+            norm: Apply norm layer to all intermediates
+            stop_early: Stop iterating over blocks when last desired intermediate hit
+            output_fmt: Shape of intermediate feature outputs
+            intermediates_only: Only return intermediate features
+            aggregation: intermediate layer aggregation method (sparse or dense).
+                Dense accumulation is done by averaging the features in each group.
+        Returns:
+            List of RadioOutput objects.
+        """
+        outputs = self.model.forward_intermediates(
+            x,
+            indices=indices,
+            return_prefix_tokens=return_prefix_tokens,
+            norm=norm,
+            stop_early=stop_early,
+            output_fmt=output_fmt,
+            intermediates_only=intermediates_only,
+            aggregation=aggregation,
+        )
+        if return_prefix_tokens:
+            radio_outputs = [RadioOutput(summary, features) for (summary, features) in outputs]
+        else:
+            radio_outputs = [RadioOutput(None, features) for features in outputs]
+        return radio_outputs
 
 
 def create_model_from_args(args) -> nn.Module:
@@ -201,10 +243,11 @@ def create_model_from_args(args) -> nn.Module:
     ), "CPE must be enabled for multiple CLS tokens!"
 
     if args.cpe_max_size is not None:
+        uq_teachers = set(t['name'] for t in args.teachers)
         enable_cpe(
             model,
             args.cpe_max_size,
-            num_cls_tokens=len(args.teachers) if args.cls_token_per_teacher else 1,
+            num_cls_tokens=len(uq_teachers) if args.cls_token_per_teacher else 1,
             register_multiple=args.register_multiple,
         )
 
