@@ -12,14 +12,16 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
+import sys
 import argparse
 import hashlib
 import logging
 import os
 import os.path as osp
+from pathlib import Path
 
 import mmengine
+from mmengine.optim import AmpOptimWrapper
 from mmengine.config import Config, DictAction
 from mmengine.logging import print_log
 from mmengine.runner import Runner
@@ -27,10 +29,25 @@ from mmengine.evaluator import DumpResults  # Added
 from mmengine.dist import is_main_process
 from mmseg.registry import RUNNERS
 
+
+# Hack: No good way to import mmseg files inside top-level radio project from here.
+#       Can't use `from mmseg.linear_head import *` because that will search mmsegmentation package
+#       Can't try to add mmseg dir to PYTHONPATH and then use `from radio import *` because that
+#         will import items from the top-level radio.__init__.py file, e.g. the wrong radio dir
+#       Can't try some relative import because it would be outside top-level `plugin` package
+#       Only solution is to create a symbolic link to `linear_head.py` and `radio.py` like:
+#           ln -s ../../mmseg/linear_head.py mmseg_linear_head.py
+#           ln -s ../../mmseg/radio.py mmseg_radio.py
+#       Upside is this should persist through pulling changes (both updating fork and cloning this)
+
 # Wildcard imports are considered bad practice but in this instance they
 # serve as a means for registering modules and setting up appropriate sys paths.
-from linear_head import *
-from radio import *
+from mmseg_linear_head import *
+from mmseg_radio import *
+
+# NOTE: Expect PYTHONPATH to include RADIO project dir for these imports
+# Add our new MMDetRADIO using ConfigurableRADIOModel
+from plugin.mmseg.mmdet_radio import *
 
 
 def parse_args():
@@ -47,7 +64,15 @@ def parse_args():
         "--amp",
         action="store_true",
         default=False,
-        help="enable automatic-mixed-precision training",
+        help="Enable automated mixed precision",
+    )
+    parser.add_argument(
+        "--amp-dtype",
+        "--amp_dtype",
+        type=str,
+        default=None,
+        help="Mixed precision dtype",
+        choices=AmpOptimWrapper.valid_dtypes,
     )
     parser.add_argument(
         "--cfg-options",
@@ -142,7 +167,7 @@ def main():
                 vis_backend.init_kwargs.allow_val_change = True
 
     # enable automatic-mixed-precision training
-    if args.amp is True:
+    if args.amp is not None:
         optim_wrapper = cfg.optim_wrapper.type
         if optim_wrapper == "AmpOptimWrapper":
             print_log(
@@ -155,8 +180,17 @@ def main():
                 "`--amp` is only supported when the optimizer wrapper type is "
                 f"`OptimWrapper` but got {optim_wrapper}."
             )
-            cfg.optim_wrapper.type = "AmpOptimWrapper"
-            cfg.optim_wrapper.loss_scale = "dynamic"
+
+        cfg.optim_wrapper.type = "AmpOptimWrapper"
+        cfg.optim_wrapper.loss_scale = "dynamic"
+
+        amp_dtype = args.amp_dtype if args.amp_dtype is not None else cfg.get("amp_dtype", None)
+        if amp_dtype is None:
+            raise RuntimeError(
+                f"Must specify --amp-dtype=<dtype_str> or --cfg-options amp_dtype=<dtype_str>"
+                f" if amp_dtype not in cfg"
+            )
+        cfg.optim_wrapper.dtype = amp_dtype
 
     # resume training
     cfg.resume = args.resume
@@ -188,4 +222,5 @@ def main():
 
 
 if __name__ == "__main__":
+
     main()

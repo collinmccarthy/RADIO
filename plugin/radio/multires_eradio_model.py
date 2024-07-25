@@ -5,13 +5,14 @@ from typing import List, Union, Sequence, Optional, Tuple
 import torch
 from timm.models.registry import register_model
 
-# Hack: add top-level module to path until setup.py exists or PYTHON_PATH has been updated
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))  # Top-level `RADIO` project dir
+# Hack: add top-level module to path until setup.py exists or PYTHONPATH has been updated
+# sys.path.insert(0, str(Path(__file__).parent.parent.parent))  # Top-level `RADIO` project dir
 
-from radio.eradio_model import FasterViT
+# NOTE: Expect PYTHONPATH to include RADIO project dir for these imports
+from radio.eradio_model import ERADIO
 
 
-class MultiResERADIOModel(FasterViT):
+class MultiResERADIOModel(ERADIO):
 
     def _intermediate_stages(
         self,
@@ -32,7 +33,7 @@ class MultiResERADIOModel(FasterViT):
             f" which is invalid.",
         )
 
-        # Follows FasterViT.forward_features() but without output norm
+        # Follows ERADIO.forward_features() but without output norm
         _, _, H, W = x.shape
         if H % 32 != 0 or W % 32 != 0:
             raise ValueError(
@@ -61,7 +62,7 @@ class MultiResERADIOModel(FasterViT):
     ) -> Tuple[Union[torch.Tensor, Tuple[torch.Tensor]]]:
         """Intermediate layer accessor following timm.models.VisionTransformer.
 
-        NOTE: Here 'n' refers to stages (or 'levels' in FasterViT) not blocks. We assert that the
+        NOTE: Here 'n' refers to stages (or 'levels' in ERADIO) not blocks. We assert that the
         indices are in range.
         """
         # take last n levels if n is an int, if in is a sequence, select by matching indices

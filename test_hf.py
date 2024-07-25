@@ -1,3 +1,4 @@
+# fmt: off
 # Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -38,8 +39,14 @@ def main():
     parser.add_argument(
         "--torchhub-version", help="Torchhub version to compare against", required=True
     )
+    parser.add_argument("--torchhub-repo", help="Path to the Torchhub repo", default="NVlabs/RADIO")
+
+    # Note: Using --force-reload still doesn't seem to update RESOURCE_MAP
     parser.add_argument(
-        "--torchhub-repo", help="Path to the Torchhub repo", default="NVlabs/RADIO"
+        "--force-reload",
+        "--force_reload",
+        action="store_true",
+        help="Reload repo if updating, to avoid key errors in RESOURCE_MAP",
     )
 
     args = parser.parse_args()
@@ -65,7 +72,8 @@ def main():
 
     # Infer using TorchHub model.
     torchhub_model = torch.hub.load(
-        args.torchhub_repo, "radio_model", version=args.torchhub_version
+        args.torchhub_repo, "radio_model", version=args.torchhub_version,
+        force_reload=args.force_reload
     )
     torchhub_model.cuda().eval()
     torchhub_model_summary, torchhub_model_features = torchhub_model(x)
@@ -79,7 +87,7 @@ def main():
     # Infer a sample image.
     image_processor = CLIPImageProcessor.from_pretrained(args.hf_repo)
 
-    image = Image.open("./examples/image1.png").convert("RGB")
+    image = Image.open("./assets/radio.png").convert("RGB")
     pixel_values = image_processor(images=image, return_tensors="pt").pixel_values
     pixel_values = pixel_values.to(torch.bfloat16).cuda()
 

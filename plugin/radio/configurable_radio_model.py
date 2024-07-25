@@ -12,8 +12,10 @@ from timm.models import clean_state_dict, VisionTransformer
 from timm.data.constants import OPENAI_CLIP_MEAN, OPENAI_CLIP_STD
 
 
-# Hack: add top-level module to path until setup.py exists or PYTHON_PATH has been updated
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))  # Top-level `RADIO` project dir
+# Hack: add top-level module to path until setup.py exists or PYTHONPATH has been updated
+# sys.path.insert(0, str(Path(__file__).parent.parent.parent))  # Top-level `RADIO` project dir
+
+# NOTE: Expect PYTHONPATH to include RADIO project dir for these imports
 
 from radio import eradio_model
 from radio.radio_model import RADIOModel, Resolution, create_model_from_args
@@ -54,28 +56,8 @@ class ConfigurableRADIOModel(RADIOModel):
         vitdet_window_size: Optional[int],
         vitdet_num_windowed: Optional[int],
         vitdet_num_global: Optional[int],
-        # Kwargs for create_model(), from checkpoint['args'] with same names unless specified
+        # Kwargs for create_model()
         create_model_kwargs: dict,
-        # model: str,
-        # in_chans: Optional[int],
-        # input_size: Optional[int],
-        # pretrained: bool,
-        # num_classes: int,
-        # drop: float,
-        # drop_path: Optional[float],
-        # drop_block: Optional[float],
-        # gp: Optional[str],  # aka global pool
-        # bn_momentum: Optional[float],
-        # bn_eps: Optional[float],
-        # initial_checkpoint: str,
-        # torchscript: bool,
-        # cls_token_per_teacher: bool,
-        # cpe_max_size: Optional[int],
-        # model_kwargs: dict,  #  e.g. {'return_full_features': True} for E-RADIO
-        # teachers: List[dict],
-        # register_multiple: int,
-        # spectral_reparam: bool,
-        # model_norm: bool,
         # Kwargs for conditioner
         dtype: Union[str, torch.dtype],
         input_scale: float = 1.0,
@@ -100,28 +82,6 @@ class ConfigurableRADIOModel(RADIOModel):
         if ignore_teachers:
             teachers = []
 
-        # self._create_model_kwargs = dict(
-        #     model=model,
-        #     in_chans=in_chans,
-        #     input_size=input_size,
-        #     pretrained=pretrained,
-        #     num_classes=num_classes,
-        #     drop=drop,
-        #     drop_path=drop_path,
-        #     drop_block=drop_block,
-        #     gp=gp,
-        #     bn_momentum=bn_momentum,
-        #     bn_eps=bn_eps,
-        #     initial_checkpoint=initial_checkpoint,
-        #     torchscript=torchscript,
-        #     cls_token_per_teacher=cls_token_per_teacher,
-        #     cpe_max_size=cpe_max_size,
-        #     model_kwargs=model_kwargs,
-        #     teachers=teachers,
-        #     register_multiple=register_multiple,
-        #     spectral_reparam=spectral_reparam,
-        #     model_norm=model_norm,
-        # )
         self._create_model_kwargs = create_model_kwargs
         model = create_model_from_args(Namespace(**create_model_kwargs))
 
@@ -319,7 +279,7 @@ class ConfigurableRADIOModel(RADIOModel):
                     all_summary = y[:, 0]
                     bb_summary = all_summary
                     all_feat = y[:, 1:]
-            elif isinstance(self.model, eradio_model.FasterViT):
+            elif isinstance(self.model, eradio_model.ERADIO):
                 _, f = y
                 all_feat = f.flatten(2).transpose(1, 2)
                 all_summary = all_feat.mean(dim=1)

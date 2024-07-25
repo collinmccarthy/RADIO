@@ -10,9 +10,10 @@ from mmengine.model import BaseModule
 from timm.models.vision_transformer import VisionTransformer
 from mmseg.models.builder import BACKBONES
 
-# Hack: add top-level module to path until setup.py exists or PYTHON_PATH has been updated
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))  # Top-level `RADIO` project dir
+# Hack: add top-level module to path until setup.py exists or PYTHONPATH has been updated
+# sys.path.insert(0, str(Path(__file__).parent.parent.parent))  # Top-level `RADIO` project dir
 
+# NOTE: Expect PYTHONPATH to include RADIO project dir for these imports
 from radio.radio_model import RadioOutput
 from plugin.radio.configurable_radio_model import ConfigurableRADIOModel
 

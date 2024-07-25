@@ -1,14 +1,15 @@
 import sys
 import copy
 from pathlib import Path
-from typing import Callable, Union, Type
+from typing import Callable, Union, Type, Iterable
 
 import torch
 from torch import nn
 
 # Hack for path
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))  # Top-level `radio` folder
+# sys.path.insert(0, str(Path(__file__).parent.parent.parent))  # Top-level `radio` folder
 
+# NOTE: Expect PYTHONPATH to include RADIO project dir for these imports
 from radio.radio_model import RADIOModel, RadioOutput, Resolution
 
 
@@ -26,14 +27,16 @@ def diff_model(
     orig_model: Union[RADIOModel, nn.Module],
     resolution: Resolution,
     skip_forward_pass: bool = False,
-    expected_type_diffs: dict[str, Type[Callable]] = {},
+    expected_curr_type_diffs: dict[str, Type[Callable]] = {},
+    type_checking_use_name: bool = False,
 ) -> dict:
     diff_results = {}  # Pass in dict to add to, so the results are "flattened"
     _diff_module(
         curr_module=curr_model,
         orig_module=orig_model,
         diff_results=diff_results,
-        expected_type_diffs=expected_type_diffs,
+        expected_curr_type_diffs=expected_curr_type_diffs,
+        type_checking_use_name=type_checking_use_name,
     )
 
     # Perform forward pass and diff result if everything else lines up
@@ -73,7 +76,10 @@ def diff_model(
             with torch.no_grad():  # Even if "training" mode, not performing grad updates
                 output: Union[RadioOutput, torch.Tensor] = curr_model(buff)
 
-            if isinstance(output, RadioOutput):
+            # Hugging Face models will have output type like:
+            #   transformers_modules.NVIDIA.RADIO-B.39bbff9882746141c2ab6adf679321cf9d8ac4a5.adaptor_base.RadioOutput
+            # Best we can do is a string comparison then
+            if type(output).__name__.endswith("RadioOutput"):
                 output_dict = output._asdict()
             elif isinstance(output, torch.Tensor):
                 output_dict = {"features": output}
@@ -110,45 +116,57 @@ def diff_model(
                     list(orig_results_dict.keys())
                 ), "Expected both models to have same keys in output dict"
 
-                output_diff = dict()
-                for key in orig_results_dict.keys():
-                    orig_result = orig_results_dict[key]
-                    curr_result = curr_results_dict[key]
+                # For training, can't use exact for some models, not exactly sure why
+                # For eval, should be able to use exact, but test allclose too
+                exact_flags = [False] if training else [True, False]
+                for exact in exact_flags:
 
-                    output_diff[key] = {}
-                    if curr_result.shape != orig_result.shape:
-                        output_diff[key]["shape"] = dict(
-                            orig_model=tuple(orig_result.shape),
-                            curr_model=tuple(curr_result.shape),
-                        )
-                    else:  # Verify values
-                        # If training, can't use exact for some models, not exactly sure why
-                        output_diff[key]["values"] = _diff_tensor(
-                            curr_tensor=curr_result, orig_tensor=orig_result, exact=not training
-                        )
+                    output_diff = dict()
+                    for key in orig_results_dict.keys():
+                        orig_result = orig_results_dict[key]
+                        curr_result = curr_results_dict[key]
 
-                diff_results_key = "forward"
-                if training:
-                    diff_results_key += "_train"
-                else:
-                    diff_results_key += "_eval"
+                        output_diff[key] = {}
+                        if curr_result.shape != orig_result.shape:
+                            output_diff[key]["shape"] = dict(
+                                orig_model=tuple(orig_result.shape),
+                                curr_model=tuple(curr_result.shape),
+                            )
+                        else:  # Verify values
+                            output_diff[key]["values"] = _diff_tensor(
+                                curr_tensor=curr_result, orig_tensor=orig_result, exact=exact
+                            )
 
-                if deploy:
-                    diff_results_key += "_deploy"
+                    diff_results_key = "forward"
+                    if training:
+                        diff_results_key += "_train"
+                    else:
+                        diff_results_key += "_eval"
 
-                diff_results[diff_results_key] = output_diff
+                    if deploy:
+                        diff_results_key += "_deploy"
+
+                    if exact:
+                        diff_results_key += "_exact"
+                    else:
+                        diff_results_key += "_allclose"
+
+                    diff_results[diff_results_key] = output_diff
 
     remove_empty_subdicts(diff_results)
     return diff_results
 
 
-def _diff_tensor(curr_tensor: torch.Tensor, orig_tensor: torch.Tensor, exact: bool = True) -> dict:
+def _diff_tensor(
+    curr_tensor: torch.Tensor, orig_tensor: torch.Tensor, exact: bool = True, atol: float = 1e-6
+) -> dict:
     diff_result = {}
 
     if exact:  # Try exact comparsion, requires deterministic functions for forward pass outputs
         tensor_equal = curr_tensor == orig_tensor
     else:
-        tensor_equal = torch.isclose(orig_tensor, curr_tensor)
+        # Using default atol=1e-6 from radio.test_hf.py
+        tensor_equal = torch.isclose(orig_tensor, curr_tensor, atol=atol)
 
     tensor_not_equal = ~tensor_equal
     if not torch.all(tensor_equal):
@@ -205,7 +223,9 @@ def _diff_module(
     orig_module: nn.Module,
     diff_results: dict,
     prefix: str = "",
-    expected_type_diffs: dict[str, Type[Callable]] = {},
+    expected_curr_type_diffs: dict[str, Type[Callable]] = {},
+    skip_buffers: Iterable[str] = tuple(),
+    type_checking_use_name: bool = False,
 ):
     # Rather than recursively adding, append to current dict so the results are shallower
     current_results = {}
@@ -279,6 +299,9 @@ def _diff_module(
         buff_diffs.update(missing_keys=missing_keys, extra_keys=extra_keys)
     else:
         for key in orig_buff_keys:
+            if key in skip_buffers:
+                continue
+
             buff_diff = {}
             orig_buff = orig_buffers[key]
             curr_buff = curr_buffers[key]
@@ -304,9 +327,14 @@ def _diff_module(
     ), "Expected both curr_module and orig_module to be nn.Module's"
 
     expected_type_diff = (
-        prefix in expected_type_diffs and type(curr_module) == expected_type_diffs[prefix]
+        prefix in expected_curr_type_diffs and type(curr_module) == expected_curr_type_diffs[prefix]
     )
-    if type(curr_module) != type(orig_module) and not expected_type_diff:
+    if type_checking_use_name:
+        same_type = type(curr_module).__name__ == type(orig_module).__name__
+    else:
+        same_type = type(curr_module) == type(orig_module)
+
+    if not same_type and not expected_type_diff:
         # Check expected type diffs
         children_diffs.update(
             module_types=dict(
@@ -338,6 +366,9 @@ def _diff_module(
             _diff_module(
                 curr_module=curr_child_module,
                 orig_module=orig_child_moduule,
-                prefix=full_key,
                 diff_results=diff_results,
+                prefix=full_key,
+                expected_curr_type_diffs=expected_curr_type_diffs,
+                skip_buffers=skip_buffers,
+                type_checking_use_name=type_checking_use_name,
             )
