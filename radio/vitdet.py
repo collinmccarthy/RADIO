@@ -58,7 +58,12 @@ class ViTDetHook:
         # This will decide if we window-fy the patches
         # and enable vit-det for this iteration, and if so,
         # rearrange the patches for efficient mode switching
-        blocks.register_forward_pre_hook(self._enter_blocks)
+
+        # MODIFIED: Register forward pre hook for first block not `blocks`` so it works if iterating
+        #   over like `for i, blk in enumerate(self.blocks)` as done in radio.enable_cpe_support.py,
+        #   _forward_intermediates_cpe()
+        # blocks.register_forward_pre_hook(self._enter_blocks)
+        blocks[0].register_forward_pre_hook(self._enter_blocks)
 
         is_global = True
         if args.num_windowed is not None:
@@ -80,7 +85,9 @@ class ViTDetHook:
         if not is_global:
             blocks[-1].register_forward_pre_hook(self._to_global)
 
-        blocks.register_forward_hook(self._exit_model)
+        # Modified: Register forward hook for last block not `blocks` so it works if iterating
+        # blocks.register_forward_hook(self._exit_model)
+        blocks[-1].register_forward_hook(self._exit_model)
 
     def _enter_model(self, _, input: List[torch.Tensor]):
         self._input_resolution = input[0].shape[-2:]

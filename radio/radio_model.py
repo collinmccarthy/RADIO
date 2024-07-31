@@ -58,11 +58,13 @@ class RADIOModel(nn.Module):
     @property
     def num_summary_tokens(self) -> int:
         patch_gen = getattr(self.model, "patch_generator", None)
+        global_pool = getattr(self.model, "global_pool", None)
         if patch_gen is not None:
             return patch_gen.num_skip
-        elif self.model.global_pool == 'avg':
-            return 0
-        return 1
+        elif global_pool is not None:
+            return 0 if global_pool == 'avg' else 1
+        else:
+            return 0  # ViTDet or non-ViT model
 
     @property
     def patch_size(self) -> int:

@@ -60,26 +60,35 @@ class RADIO(BaseModule):
         # Scale inputs to the range [0, 1].
         x = x / 255.0
 
+        features: torch.Tensor
         _, features = self.base_model(x)
 
-        if isinstance(self.base_model.model, VisionTransformer):
-            if hasattr(self.base_model.model, "patch_generator"):
-                # Cropped Positional Embedding (CPE) case.
-                patch_height = patch_width = self.base_model.model.patch_generator.patch_size
-            else:
-                # Standard ViT case.
-                patch_height, patch_width = self.base_model.model.patch_embed.patch_size
-
-        else:  #  isinstance(self.base_model.model.patch_embed, radio.eradio_model.PatchEmbed):
-            patch_height, patch_width = 16, 16
-
         # Reshape
-        B, _, C = features.shape
-        features = (
-            features.reshape(B, math.ceil(H / patch_height), math.ceil(W / patch_width), C)
-            .permute(0, 3, 1, 2)
-            .contiguous()
-        )
+        if features.ndim == 3:
+            if isinstance(self.base_model.model, VisionTransformer):
+                if hasattr(self.base_model.model, "patch_generator"):
+                    # Cropped Positional Embedding (CPE) case.
+                    patch_height = patch_width = self.base_model.model.patch_generator.patch_size
+                else:
+                    # Standard ViT case.
+                    patch_height, patch_width = self.base_model.model.patch_embed.patch_size
+
+            else:  # E-RADIO or other non-ViT model
+                torch._assert(
+                    getattr(self, "patch_size", None) is not None, "Found self.patch_size=None"
+                )
+                patch_height, patch_width = self.patch_size, self.patch_size
+
+            B, _, C = features.shape
+            features = (
+                features.reshape(B, math.ceil(H / patch_height), math.ceil(W / patch_width), C)
+                .permute(0, 3, 1, 2)
+                .contiguous()
+            )
+        else:
+            torch._assert(
+                features.ndim == 4, f"Expected NHWC features tensor, found ndim={features.ndim}"
+            )
 
         # IMPORTANT: prevent gradients from flowing back towards the backbone.
         features = features.detach()

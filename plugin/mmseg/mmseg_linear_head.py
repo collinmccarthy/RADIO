@@ -1,1 +1,0 @@
-../../mmseg/linear_head.py

@@ -9,7 +9,6 @@ _base_ = [
 
 # model settings
 crop_size = (512, 512)
-size_divisor = 32  # ADDED: Using for padding like RADIO
 norm_cfg = dict(type="SyncBN", requires_grad=True)
 data_preprocessor = dict(
     type="SegDataPreProcessor",
@@ -46,8 +45,9 @@ model = dict(
     ),
     # model training and testing settings
     train_cfg=dict(),
-    # test_cfg=dict(mode="slide", crop_size=crop_size, stride=(341, 341))  # UPDATED: Times out during val
-    test_cfg=dict(mode="whole"),  # UPDATED: Use whole testing now that we've padded
+    # UPDATED: mode='slide' times out during last few val steps, using 'whole' instead with padding
+    # test_cfg=dict(mode="slide", crop_size=crop_size, stride=(341, 341))
+    test_cfg=dict(mode="whole"),
 )  # yapf: disable
 
 # AdamW optimizer, no weight decay for position embedding & layer norm
@@ -92,8 +92,8 @@ val_dataloader = dict(
             dict(type="Resize", scale=(2048, 512), keep_ratio=True),
             # add loading annotation after ``Resize`` because ground truth
             # does not need to do resize data transform
-            # UPDATED: Pad to multiple of size_divisor (32 for E-RADIO)
-            dict(type="Pad", size_divisor=size_divisor),
+            # UPDATED: Pad to multiple of 32 to use mode='whole' for test_cfg
+            dict(type="Pad", size_divisor=32),
             dict(type="LoadAnnotations", reduce_zero_label=True),
             dict(type="PackSegInputs"),
         ]
