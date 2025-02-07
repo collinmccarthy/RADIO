@@ -1,7 +1,9 @@
 [![Star on GitHub](https://img.shields.io/github/stars/NVlabs/RADIO.svg?style=social)](https://github.com/NVlabs/RADIO/stargazers)
 [![License](https://img.shields.io/badge/license-NC-blue.svg)](LICENSE)
-[![Paper](https://img.shields.io/badge/paper-arXiv.2312.06709-blue.svg)](https://arxiv.org/abs/2312.06709)
-[![Paper](https://img.shields.io/badge/paper-CVPR.2024-blue.svg)](https://arxiv.org/abs/2312.06709)
+[![Paper](https://img.shields.io/badge/RADIO_AMP-arXiv.2412.07679-green.svg)](https://arxiv.org/abs/2412.07679)
+[![Paper](https://img.shields.io/badge/PHI_Standardization-arXiv.2410.01680-orange.svg)](https://arxiv.org/abs/2410.01680)
+[![Paper](https://img.shields.io/badge/AM_RADIO-arXiv.2312.06709-blue.svg)](https://arxiv.org/abs/2312.06709)
+[![Paper](https://img.shields.io/badge/AM_RADIO-CVPR.2024-blue.svg)](https://openaccess.thecvf.com/content/CVPR2024/papers/Ranzinger_AM-RADIO_Agglomerative_Vision_Foundation_Model_Reduce_All_Domains_Into_One_CVPR_2024_paper.pdf)
 
 # \[CVPR 2024\] AM-RADIO: Agglomerative Vision Foundation Model - Reduce All Domains Into One
 
@@ -11,6 +13,7 @@
 
 Official PyTorch implementation of \[CVPR 2024\] [**AM-RADIO: Agglomerative Vision Foundation Model - Reduce All Domains Into One**](https://arxiv.org/abs/2312.06709).
 
+Check out our latest preprints: [**PHI-S: Distribution Balancing for Label-Free Multi-Teacher Distillation**](https://arxiv.org/abs/2410.01680) and [**RADIO Amplified: Improved Baselines for Agglomerative Vision Foundation Models**](https://arxiv.org/abs/2412.07679).
 
 
 Mike Ranzinger, Greg Heinrich, [Jan Kautz](https://jankautz.com/), [Pavlo Molchanov](https://www.pmolchanov.com/).
@@ -19,7 +22,7 @@ Mike Ranzinger, Greg Heinrich, [Jan Kautz](https://jankautz.com/), [Pavlo Molcha
 
 For business inquiries, please visit our website and submit the form: [NVIDIA Research Licensing](https://www.nvidia.com/en-us/research/inquiries/)
 
-\[[Paper](https://arxiv.org/abs/2312.06709)\]\[[BibTex](#citing-radio)\]
+\[[RADIO-Amplified](https://arxiv.org/abs/2412.07679)\]\[[PHI-S](https://arxiv.org/abs/2410.01680)\]\[[AM-RADIO](https://arxiv.org/abs/2312.06709)\]\[[BibTex](#citing-radio)\]
 
 <br clear="left"/>
 
@@ -27,6 +30,11 @@ For business inquiries, please visit our website and submit the form: [NVIDIA Re
 
 
 ## News/Release
+
+- [12.18.2024] We release C-RADIO, a ViT-H/16 model which can be used for commercial products, under the [NVIDIA Open Model License Agreement](https://developer.download.nvidia.com/licenses/nvidia-open-model-license-agreement-june-2024.pdf) license!
+- [12.11.2024] We release RADIOv2.5 ViT-g/14, our biggest model yet!
+- [12.10.2024] We release \[[RADIO-Amplified](https://arxiv.org/abs/2412.07679)\] to ArXiv with details on our method to address the mode-switching issue (previously described in this [tech report](./RADIOv2.5_tech_report.md)) and our efficient VLM integration method.
+- [10.2.2024] 🔥🔥 RADIOv2.5 ViT-H/16 model is released. We have also released \[[PHI-S: Distribution Balancing for Label-Free Multi-Teacher Distillation](https://arxiv.org/abs/2410.01680)\] to ArXiv that details one of the major algorithm updates behind the version 2.5 releases.
 - [7.22.2024] 🔥 RADIOv2.5 ViT-B/16 and ViT-L/16 are released. For VLLM tasks, RADIOv2.5-B is as good or better than RADIOv2, and RADIOv2.5-L is much better! See [tech report](./RADIOv2.5_tech_report.md).
 - [4.30.2024] 🔥 README is updated with more metrics, Arxiv is updated with new results.
 - [3.21.2024] 🔥 RADIOv2.1 is released. Trained in bf16, improves metrics!
@@ -55,19 +63,37 @@ The latest model version is RADIOv2. We will update the description once new mod
 To load in the TorchHub, use the following command:
 
 ```Python
+from PIL import Image
+
 import torch
-model_version="radio_v2.5-l" # for RADIOv2.5-L model (ViT-L/16)
+from torch.nn import functional as F
+from torchvision.transforms.functional import pil_to_tensor
+#model_version="radio_v2.5-g" # for RADIOv2.5-g model (ViT-H/14)
+model_version="radio_v2.5-h" # for RADIOv2.5-H model (ViT-H/16)
+# model_version="radio_v2.5-l" # for RADIOv2.5-L model (ViT-L/16)
 #model_version="radio_v2.5-b" # for RADIOv2.5-B model (ViT-B/16)
 #model_version="e-radio_v2" # for E-RADIO
 model = torch.hub.load('NVlabs/RADIO', 'radio_model', version=model_version, progress=True, skip_validation=True)
 model.cuda().eval()
-x = torch.rand(1, 3, 512, 512, device='cuda')
+
+x = Image.open('assets/radio_overview_github.png').convert('RGB')
+x = pil_to_tensor(x).to(dtype=torch.float32, device='cuda')
+x.div_(255.0)  # RADIO expects the input values to be between 0 and 1
+x = x.unsqueeze(0) # Add a batch dimension
+
+nearest_res = model.get_nearest_supported_resolution(*x.shape[-2:])
+x = F.interpolate(x, nearest_res, mode='bilinear', align_corners=False)
 
 if "e-radio" in model_version:
     model.model.set_optimal_window_size(x.shape[2:]) #where it expects a tuple of (height, width) of the input image.
 
 # RADIO expects the input to have values between [0, 1]. It will automatically normalize them to have mean 0 std 1.
 summary, spatial_features = model(x)
+
+# By default, RADIO will return the spatial_features in NLC format, with L being a combined height/width dimension.
+# You can alternatively ask for the features in the more computer-vision-convenient format NCHW the following way:
+summary, spatial_features = model(x, feature_fmt='NCHW')
+assert spatial_features.ndim == 4
 
 # RADIO also supports running in mixed precision:
 with torch.autocast('cuda', dtype=torch.bfloat16):
@@ -97,7 +123,10 @@ from transformers import AutoModel, CLIPImageProcessor
 
 # hf_repo = "nvidia/E-RADIO" # For E-RADIO.
 #hf_repo = "nvidia/RADIO-B" # For RADIO-B.
-hf_repo = "nvidia/RADIO-L" # For RADIO-L.
+hf_repo = "nvidia/RADIO" # For RADIO-H.
+#hf_repo = "nvidia/RADIO-g" # For RADIO-g.
+#hf_repo = "nvidia/C-RADIO" # For C-RADIO-H.
+#hf_repo = "nvidia/RADIO-L" # For RADIO-L.
 
 image_processor = CLIPImageProcessor.from_pretrained(hf_repo)
 model = AutoModel.from_pretrained(hf_repo, trust_remote_code=True)
@@ -117,7 +146,10 @@ Please see more details on usage in the [Quick Start](#quick-start---torchhub) s
 
 | Name         | Architecture | Precision | Teachers                                 | Throughput | Zero Shot Top-1 | kNN Top-1 | ADE20k    | VOC       | GQA       | TextVQA   | VQAv2     | SAM-COCO  |
 |--------------|--------------|-----------|------------------------------------------|------------|-----------------|-----------|-----------|-----------|-----------|-----------|-----------|-----------|
-| radio_v2.5-l | ViT-L/16-CPE | Float32   | DFN CLIP; SigLIP; DINOv2; SAM            |            | 81.01           | 84.68     | **51.47** | **85.49** | **64.13** | **61.93** | **81.02** | 75.06     |
+| radio-g | DINOv2 ViT-g/14 | Float32   | DFN CLIP; SigLIP, DINOv2; SAM; |           | 83.33   | 85.34 | **54.56** | **87.37** |  | | | 76.17 |
+| c-radio-h | ViT-H/16-CPE | Float32   | DFN CLIP; SigLIP, DINOv2; SAM; | 556        | 82.24           | 85.27     | 52.55 | 85.88 | 64.01 | 62.12 | 80.74 |  74.82   |
+| radio_v2.5-h | ViT-H/16-CPE | Float32   | DFN CLIP; SigLIP, DINOv2; SAM; Florence2 | 556        | 82.51           | 85.81     | 51.58 | **85.97** | **65.03** | **62.39** | **81.56** | 76.14     |
+| radio_v2.5-l | ViT-L/16-CPE | Float32   | DFN CLIP; SigLIP; DINOv2; SAM            |            | 81.01           | 84.68     | 51.47     | 85.49     | 64.13     | 61.93     | 81.02     | 75.06     |
 | radio_v2.5-b | ViT-B/16-CPE | Float32   | DFN CLIP; SigLIP; DINOv2; SAM            |            | 74.57           | 81.89     | 48.94     | 84.35     | 63.31     | 56.93     | 79.22     | 73.87     |
 | radio_v2.1   | ViT-H/16-CPE | BFloat16  | DFN CLIP; OpenAI CLIP; DINOv2; SAM       | 556        | **82.93**       | **86.06** | 51.34     | 84.71     | 63.01     | 56.32     | 79.28     | **76.58** |
 | radio_v2     | ViT-H/16-CPE | Float32   | DFN CLIP; OpenAI CLIP; DINOv2; SAM       | 556        | 82.71           | 85.92     | 51.33     |           | 62.78     | 56.37     | 79.00     | 76.21     |
@@ -147,6 +179,9 @@ For summarization results we use the summarization token of the model. For Zero-
 | RADIOv2.1              | 653        | 432        | 158        | 82.93               | **86.06**       |
 | RADIOv2.5-B            |            | 768        |            | 74.57               |                 |
 | RADIOv2.5-L            |            | 1024       |            | 81.01               |                 |
+| RADIOv2.5-H            |            | 1024       |            | 82.51               | 85.81           |
+| RADIOv2.5-g            |            | 1024       |            | 83.33               | 85.34           |
+| C-RADIO                |            | 1024       |            | 82.24               | 85.27           |
 
 
 ### Segmentation metrics:
@@ -169,7 +204,10 @@ For summarization results we use the summarization token of the model. For Zero-
 | E-RADIO-L              | 48.22               | 81.64            | 76.31    |
 | RADIOv2.1              | 51.34               | 84.71            | 76.23    |
 | RADIOv2.5-B            | 48.94               | 84.35            | 73.87    |
-| RADIOv2.5-L            | **51.47**           | **85.49**        | 75.06    |
+| RADIOv2.5-L            | 51.47               | 85.49            | 75.06    |
+| RADIOv2.5-H            | 51.58               | 85.97            | 76.14    |
+| RADIOv2.5-g            | 54.56               | 87.37            | 76.17    |
+| C-RADIO                | 52.55               | 85.88            | 74.82    |
 
 
 ### Vision-language model performance metrics in LLaVa 1.5:
@@ -191,7 +229,8 @@ We replace the vision backbone and keep the same LLM and training recipe as in L
 | E-RADIO-L   (512px)      | 61.70               | 85.07                | 51.47                   | 76.73                 |
 | RADIOv2.1   (432px)*     | 63.01               | 86.20                | 56.32                   | 79.28                 |
 | RADIOv2.5-B (768px)*     | 63.31               | 87.54                | 56.93                   | 79.22                 |
-| RADIOv2.5-L (768px)*     | **64.13**           | **87.68**            | **61.93**               | **81.02**             |
+| RADIOv2.5-L (768px)*     | 64.13               | **87.68**            | 61.93                   | 81.02                 |
+| RADIOv2.5-H (768px)*     | **65.03**           | 87.36                | **62.39**               | **81.56**             |
 
 *NOTE: We run RADIOv2.1 in 432px resolution and RADIOv2.5-X in 768px resolution. While this may seem unfair, it's actually because
 the mode switching problem in RADIOv2.1 prevents it from achieving strong results at resolutions above 432. Starting with RADIOv2.5,
@@ -216,7 +255,8 @@ performs much better than CLIP analogs.
 |-----------------------|-----------|-----------------|------------------|
 | RADIOv2.1             | 81.0      | 58.5            | **62.1**         |
 | RADIOv2.5-B           | 83.0      | 57.5            | 56.1             |
-| RADIOv2.5-L           | **84.7**  | **60.1**        | 58.5
+| RADIOv2.5-L           | 84.7      | 60.1            | 58.5             |
+| RADIOv2.5-H           | **85.7**  | **62.5**        | 60.9             |
 
 
 ## Detailed usage
@@ -225,7 +265,7 @@ performs much better than CLIP analogs.
 import torch
 
 # If you don't supply the `version` parameter, the latest ViT version will be returned.
-model = torch.hub.load('NVlabs/RADIO', 'radio_model', version='radio_v2.5-l', progress=True)
+model = torch.hub.load('NVlabs/RADIO', 'radio_model', version='radio_v2.5-h', progress=True)
 model.cuda().eval()
 
 x = torch.rand(1, 3, 224, 224, device='cuda')
@@ -261,6 +301,19 @@ pixel_values = image_processor(images=image, return_tensors='pt').pixel_values
 pixel_values = pixel_values.to(torch.bfloat16).cuda()
 
 summary, features = model(pixel_values)
+```
+
+In order to use adaptors with models from HuggingFace, first you need to load the config
+and set `adaptor_names`, then load the model using this config.
+
+```python
+config = AutoConfig.from_pretrained(args.hf_repo, trust_remote_code=True)
+config.adaptor_names = ["clip", "sam"]
+model = AutoModel.from_pretrained(hf_repo, trust_remote_code=True, config=config)
+model.eval().cuda()
+
+clip_summary, clip_features = model(pixel_values)["clip"].summary, model(pixel_values)["clip"].features
+sam_summary, sam_features = model(pixel_values)["sam"].summary, model(pixel_values)["sam"].features
 ```
 
 ### Usage
@@ -305,7 +358,7 @@ RADIO allows non-square inputs. In fact, both RADIOv1 and RADIOv2 achieve higher
 ### Adaptors
 _(Currently only supported with TorchHub)_
 
-You may additionally specify model adaptors to achieve extra behaviors. Currently, 'clip' is the only supported adaptor. In this mode, radio will return a dict of tuples:
+You may additionally specify model adaptors to achieve extra behaviors. In this mode, radio will return a dict of tuples:
 
 ```Python
 model = torch.hub.load(..., adaptor_names='clip', ...)
@@ -317,6 +370,13 @@ clip_summary, clip_features = output['clip']
 ```
 
 Refer to `examples/zero_shot_imagenet.py` for example usage.
+
+#### Supported Adaptors:
+
+- RADIOv2.5: `clip`, `siglip`, `dino_v2`, `sam`
+- RADIOv2\[.1\]: `clip`, `dino_v2`, `sam`
+
+The `clip` and `siglip` adaptors have the additional functionality of supporting tokenization and language encoding. Refer to `examples/zero_shot_imagenet.py` for this use, as well as the [API](https://github.com/NVlabs/RADIO/blob/main/radio/open_clip_adaptor.py#L33-L36).
 
 ### Preprocessing
 
@@ -333,8 +393,7 @@ output = model(images)
 <details>
 <summary>HuggingFace hub</summary>
 
-
-
+All our HuggingFace models are available under the umbrella of the [Nvidia RADIO collection](https://huggingface.co/collections/nvidia/radio-669f77f1dd6b153f007dd1c6).
 
 </details>
 
@@ -375,6 +434,39 @@ _Coming Soon_
 ## Citing RADIO
 
 If you find this repository useful, please consider giving a star and citation:
+
+### RADIO Amplified: Improved Baselines for Agglomerative Vision Foundation Models
+
+#### ArXiv Reference:
+
+```bibtex
+@misc{heinrich2024radioamplifiedimprovedbaselines,
+      title={RADIO Amplified: Improved Baselines for Agglomerative Vision Foundation Models},
+      author={Greg Heinrich and Mike Ranzinger and Hongxu and Yin and Yao Lu and Jan Kautz and Andrew Tao and Bryan Catanzaro and Pavlo Molchanov},
+      year={2024},
+      eprint={2412.07679},
+      archivePrefix={arXiv},
+      primaryClass={cs.CV},
+      url={https://arxiv.org/abs/2412.07679},
+}
+```
+
+### PHI-S: Distribution Balancing for Label-Free Multi-Teacher Distillation
+
+#### ArXiv Reference:
+```bibtex
+@misc{ranzinger2024phisdistributionbalancinglabelfree,
+      title={PHI-S: Distribution Balancing for Label-Free Multi-Teacher Distillation},
+      author={Mike Ranzinger and Jon Barker and Greg Heinrich and Pavlo Molchanov and Bryan Catanzaro and Andrew Tao},
+      year={2024},
+      eprint={2410.01680},
+      archivePrefix={arXiv},
+      primaryClass={cs.LG},
+      url={https://arxiv.org/abs/2410.01680},
+}
+```
+
+### AM-RADIO: Agglomerative Vision Foundation Model - Reduce All Domains Into One
 
 #### CVPR 2024 Reference:
 ```bibtex

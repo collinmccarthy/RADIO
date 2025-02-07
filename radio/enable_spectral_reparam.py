@@ -1,9 +1,16 @@
 # fmt: off
+# Copyright (c) 2023-2024, NVIDIA CORPORATION.  All rights reserved.
+#
+# NVIDIA CORPORATION and its licensors retain all intellectual property
+# and proprietary rights in and to this software, related documentation
+# and any modifications thereto.  Any use, reproduction, disclosure or
+# distribution of this software and related documentation without an express
+# license agreement from NVIDIA CORPORATION is strictly prohibited.
 
 from logging import getLogger
 import math
 import os
-from typing import Union, Tuple
+from typing import Dict, List, Optional, Union, Tuple
 from types import MethodType
 
 import torch
@@ -27,7 +34,7 @@ class _SNReweight(_SpectralNorm):
 
         if init_norm_to_current:
             # This will set the numerator to match the denominator, which should preserve the original values
-            init_scale = self._get_sigma(weight).item()
+            init_scale = self._get_sigma(weight, n_power_iterations=20).item()
         else:
             init_scale = 1.0
 
@@ -47,14 +54,16 @@ class _SNReweight(_SpectralNorm):
         self.scale = nn.Parameter(torch.tensor([[init_value]], dtype=torch.float32, device=weight.device))
 
     # Re-implementing this because we need to make division by sigma safe
-    def _get_sigma(self, weight: torch.Tensor) -> torch.Tensor:
+    def _get_sigma(self, weight: torch.Tensor, n_power_iterations: int = None) -> torch.Tensor:
+        if not n_power_iterations:
+            n_power_iterations = self.n_power_iterations
         if weight.ndim == 1:
             # Faster and more exact path, no need to approximate anything
             sigma = weight.norm()
         else:
             weight_mat = self._reshape_weight_to_matrix(weight)
             if self.training:
-                self._power_method(weight_mat, self.n_power_iterations)
+                self._power_method(weight_mat, n_power_iterations)
             # See above on why we need to clone
             u = self._u.clone(memory_format=torch.contiguous_format)
             v = self._v.clone(memory_format=torch.contiguous_format)
@@ -92,21 +101,20 @@ class _SNReweight(_SpectralNorm):
         return super()._load_from_state_dict(state_dict, prefix, local_metadata, strict, missing_keys, unexpected_keys, error_msgs)
 
 
-class _AttnSNReweight(nn.Module):
-    def __init__(self, weight: torch.Tensor, *args, init_norm_to_current: bool = False, renorm_values: bool = False, **kwargs):
+class _ChunkedSNReweight(nn.Module):
+    def __init__(self, weight: torch.Tensor, num_chunks: int, *args, init_norm_to_current: bool = False, **kwargs):
         super().__init__()
 
-        parts = weight.split(weight.shape[0] // 3, dim=0)
-
-        ct = 2 if not renorm_values else 3
+        self.num_chunks = num_chunks
+        parts = weight.split(weight.shape[0] // num_chunks, dim=0)
 
         self.parts = nn.ModuleList([
-            _SNReweight(p, *args, init_norm_to_current=init_norm_to_current, **kwargs) if i < ct else nn.Identity()
-            for i, p in enumerate(parts)
+            _SNReweight(p, *args, init_norm_to_current=init_norm_to_current, **kwargs)
+            for p in parts
         ])
 
     def forward(self, weight: torch.Tensor, *args, **kwargs):
-        parts = weight.split(weight.shape[0] // 3, dim=0)
+        parts = weight.split(weight.shape[0] // self.num_chunks, dim=0)
 
         parts = [
             fn(p)
@@ -116,45 +124,88 @@ class _AttnSNReweight(nn.Module):
         return torch.cat(parts, dim=0)
 
 
-def enable_spectral_reparam(model: nn.Module,
+class _AttnSNReweight(_ChunkedSNReweight):
+    def __init__(self, weight: torch.Tensor, *args, init_norm_to_current: bool = False, renorm_values: bool = False, **kwargs):
+        super().__init__(weight, 3, *args, init_norm_to_current=init_norm_to_current, **kwargs)
+
+        if not renorm_values:
+            self.parts[2] = nn.Identity()
+
+
+def enable_spectral_reparam(model: Union[nn.Module, List[nn.Module]],
                             n_power_iterations: int = 1,
                             eps: float = 1e-6,
                             init_norm_to_current: bool = False,
                             renorm_values: bool = True,
-                            renorm_mlp: bool = True):
-    # print('Enabling spectral reparametrization')
-    for mod in model.modules():
-        if isinstance(mod, Attention):
-            parametrize.register_parametrization(
-                mod.qkv,
-                'weight',
-                _AttnSNReweight(mod.qkv.weight, n_power_iterations, dim=0, eps=eps, init_norm_to_current=init_norm_to_current, renorm_values=renorm_values),
-            )
-            pass
-        elif isinstance(mod, Mlp) and renorm_mlp:
-            parametrize.register_parametrization(
-                mod.fc1,
-                'weight',
-                _SNReweight(mod.fc1.weight, n_power_iterations, dim=0, eps=eps, init_norm_to_current=init_norm_to_current),
-            )
-            parametrize.register_parametrization(
-                mod.fc2,
-                'weight',
-                _SNReweight(mod.fc2.weight, n_power_iterations, dim=0, eps=eps, init_norm_to_current=init_norm_to_current),
-            )
-            pass
+                            renorm_mlp: bool = True,
+                            state_dict_guidance: Optional[Dict[str, torch.Tensor]] = None):
+    if isinstance(model, (list, tuple)):
+        for i, sub in enumerate(model):
+            sub_sd = state_dict_guidance[i] if isinstance(state_dict_guidance, (list, tuple)) else state_dict_guidance
+            enable_spectral_reparam(sub, n_power_iterations=n_power_iterations, eps=eps,
+                                    init_norm_to_current=init_norm_to_current, renorm_values=renorm_values,
+                                    renorm_mlp=renorm_mlp, state_dict_guidance=sub_sd)
+        return
+
+    print('Enabling spectral reparametrization')
+    args = dict(n_power_iterations=n_power_iterations, dim=0, eps=eps, init_norm_to_current=init_norm_to_current)
+    visited_prefixes = set()
+
+    def is_guidance_parametrized(name: str):
+        if state_dict_guidance is None:
+            return True
+
+        p_name = f'{name}.parametrizations'
+        is_prm = any(k for k in state_dict_guidance if k.startswith(p_name))
+        return is_prm
+
+    def parametrize_linear(linear: nn.Linear):
+        parametrize.register_parametrization(
+            linear,
+            'weight',
+            _SNReweight(linear.weight, **args)
+        )
+
+    for name, mod in model.named_modules():
+        pref = '.'.join(name.split('.')[:-1])
+        if pref in visited_prefixes:
+            continue
+
+        if isinstance(mod, Attention) or name.endswith('.attn'):
+            if is_guidance_parametrized(f'{name}.qkv'):
+                parametrize.register_parametrization(
+                    mod.qkv,
+                    'weight',
+                    _AttnSNReweight(mod.qkv.weight, renorm_values=renorm_values, **args),
+                )
+            if hasattr(mod, 'proj') and is_guidance_parametrized(f'{name}.proj'):
+                parametrize_linear(mod.proj)
+            visited_prefixes.add(name)
+        elif name.endswith('mlp') and renorm_mlp and hasattr(mod, 'w12'):
+            if is_guidance_parametrized(f'{name}.w12'):
+                parametrize.register_parametrization(
+                    mod.w12,
+                    'weight',
+                    _ChunkedSNReweight(mod.w12.weight, num_chunks=2, **args),
+                )
+            if is_guidance_parametrized(f'{name}.w3'):
+                parametrize_linear(mod.w3)
+            visited_prefixes.add(name)
+        elif isinstance(mod, nn.Linear) and 'patch_generator' not in name and is_guidance_parametrized(name):
+            parametrize_linear(mod)
 
 
-def configure_spectral_reparam_from_args(model: nn.Module, args):
+def configure_spectral_reparam_from_args(model: nn.Module, args, state_dict_guidance: Optional[Dict[str, torch.Tensor]] = None):
     spectral_reparam = getattr(args, 'spectral_reparam', False)
     if isinstance(spectral_reparam, bool) and spectral_reparam:
-        enable_spectral_reparam(model, init_norm_to_current=args.pretrained)
+        enable_spectral_reparam(model, init_norm_to_current=True, state_dict_guidance=state_dict_guidance)
     elif isinstance(spectral_reparam, dict):
         enable_spectral_reparam(
             model,
             n_power_iterations=spectral_reparam.get('n_power_iterations', 1),
             eps=spectral_reparam.get('eps', 1e-12),
-            init_norm_to_current=args.pretrained,
+            init_norm_to_current=True,
+            state_dict_guidance=state_dict_guidance,
         )
 
 # fmt: on
@@ -180,14 +231,12 @@ def configure_spectral_reparam_from_kwargs(
 
 
 def disable_spectral_reparam(model: nn.Module):
-    for mod in model.modules():
-        if isinstance(mod, Attention):
-            parametrize.remove_parametrizations(mod.qkv, 'weight')
+    print('Disabling spectral reparametrization')
+    for name, mod in model.named_modules():
+        if parametrize.is_parametrized(mod):
+            parametrize.remove_parametrizations(mod, 'weight')
             pass
-        elif isinstance(mod, Mlp):
-            parametrize.remove_parametrizations(mod.fc1, 'weight')
-            parametrize.remove_parametrizations(mod.fc2, 'weight')
-            pass
+
 
 
 if __name__ == '__main__':

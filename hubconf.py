@@ -18,7 +18,8 @@ from timm.models import clean_state_dict
 
 from radio.adaptor_registry import adaptor_registry
 from radio.common import DEFAULT_VERSION, RadioResource, RESOURCE_MAP
-from radio.enable_spectral_reparam import disable_spectral_reparam
+from radio.enable_spectral_reparam import disable_spectral_reparam, configure_spectral_reparam_from_args
+from radio.feature_normalizer import FeatureNormalizer, IntermediateFeatureNormalizer
 from radio.radio_model import RADIOModel, create_model_from_args
 from radio.input_conditioner import get_default_conditioner
 from radio.vitdet import apply_vitdet_arch, VitDetArgs
@@ -29,6 +30,7 @@ def radio_model(
     progress: bool = True,
     adaptor_names: Union[str, List[str]] = None,
     vitdet_window_size: Optional[int] = None,
+    return_checkpoint: bool = False,
     **kwargs,
 ) -> RADIOModel:
     if not version:
@@ -49,11 +51,17 @@ def radio_model(
     else:
         state_dict = chk["state_dict"]
 
-    mod = create_model_from_args(chk["args"])
+    args = chk["args"]
+    mod = create_model_from_args(args)
+
+    mod_state_dict = get_prefix_state_dict(state_dict, "base_model.")
+
+    if args.spectral_reparam:
+        configure_spectral_reparam_from_args(mod, args, state_dict_guidance=mod_state_dict)
 
     state_dict = clean_state_dict(state_dict)
 
-    key_warn = mod.load_state_dict(get_prefix_state_dict(state_dict, "base_model."), strict=False)
+    key_warn = mod.load_state_dict(mod_state_dict, strict=False)
     if key_warn.missing_keys:
         warnings.warn(f'Missing keys in state dict: {key_warn.missing_keys}')
     if key_warn.unexpected_keys:
@@ -77,11 +85,13 @@ def radio_model(
     mod.to(dtype=dtype)
     conditioner.dtype = dtype
 
-    summary_idxs = torch.tensor([
-        i
-        for i, t in enumerate(chk["args"].teachers)
-        if t.get("use_summary", True)
-    ], dtype=torch.int64)
+    name_to_idx_map = dict()
+    for i, t in enumerate(chk['args'].teachers):
+        if t.get('use_summary', True):
+            name = t['name']
+            if name not in name_to_idx_map:
+                name_to_idx_map[name] = i
+    summary_idxs = torch.tensor(sorted(name_to_idx_map.values()), dtype=torch.int64)
 
     if adaptor_names is None:
         adaptor_names = []
@@ -119,6 +129,22 @@ def radio_model(
         adaptor.head_idx = tidx
         adaptors[adaptor_name] = adaptor
 
+    feat_norm_sd = get_prefix_state_dict(state_dict, '_feature_normalizer.')
+    feature_normalizer = None
+    if feat_norm_sd:
+        feature_normalizer = FeatureNormalizer(feat_norm_sd['mean'].shape[0], dtype=dtype)
+        feature_normalizer.load_state_dict(feat_norm_sd)
+
+    inter_feat_norm_sd = get_prefix_state_dict(state_dict, '_intermediate_feature_normalizer.')
+    inter_feature_normalizer = None
+    if inter_feat_norm_sd:
+        inter_feature_normalizer = IntermediateFeatureNormalizer(
+            *inter_feat_norm_sd['means'].shape[:2],
+            rot_per_layer=inter_feat_norm_sd['rotation'].ndim == 3,
+            dtype=dtype
+        )
+        inter_feature_normalizer.load_state_dict(inter_feat_norm_sd)
+
     radio = RADIOModel(
         mod,
         conditioner,
@@ -128,6 +154,8 @@ def radio_model(
         window_size=vitdet_window_size,
         preferred_resolution=resource.preferred_resolution,
         adaptors=adaptors,
+        feature_normalizer=feature_normalizer,
+        inter_feature_normalizer=inter_feature_normalizer,
     )
 
     if vitdet_window_size is not None:
@@ -141,6 +169,8 @@ def radio_model(
             ),
         )
 
+    if return_checkpoint:
+        return radio, chk
     return radio
 
 

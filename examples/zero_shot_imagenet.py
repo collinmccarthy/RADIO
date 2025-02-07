@@ -11,6 +11,7 @@ from hashlib import sha256
 import math
 import os
 from PIL import Image
+import sys
 from tqdm import tqdm
 from typing import Any, Dict, Iterable, List, Tuple
 
@@ -56,7 +57,7 @@ def main(rank: int = 0, world_size: int = 1):
     parser.add_argument('--split', default='validation',
                         help='The dataset split to use.'
     )
-    parser.add_argument('--resize-multiple', type=int, default=16,
+    parser.add_argument('--resize-multiple', type=int, default=None,
                         help='Resize images with dimensions a multiple of this value.'
                              ' This should be equal to the patch size of a ViT (e.g. RADIOv1)'
     )
@@ -81,6 +82,8 @@ def main(rank: int = 0, world_size: int = 1):
     )
     parser.add_argument('--use-huggingface', default=False, action='store_true',
                         help='Use the huggingface model')
+    parser.add_argument('--csv-out', type=str, default=None,
+                        help='Append the zero shot score to the specified csv')
 
     args, _ = parser.parse_known_args()
 
@@ -167,6 +170,10 @@ def main(rank: int = 0, world_size: int = 1):
         acc = (acc / num_processed).item()
 
         rank_print(f'\tTop {k}: {acc:.3f}')
+
+        if rank == 0 and k == 1 and args.csv_out:
+            with open(args.csv_out, 'a') as fd:
+                fd.write(f'{" ".join(str(r) for r in args.resolution)},{acc:.4f}\n')
 
 
 def accuracy(output, target, topk=(1,)):
@@ -273,7 +280,7 @@ if __name__ == '__main__':
     rank = 0
     world_size = 1
 
-    if 'WORLD_SIZE' in os.environ:
+    if 'WORLD_SIZE' in os.environ and '--help' not in sys.argv:
         dist.init_process_group(backend='nccl')
         rank = dist.get_rank()
         world_size = dist.get_world_size()
